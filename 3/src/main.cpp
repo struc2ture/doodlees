@@ -9,53 +9,7 @@
 #include "util.hpp"
 
 #include "gl_tiles.cpp"
-
-#define STB_IMAGE_IMPLEMENTATION
-#include <stb_image.h>
-
-struct Rect
-{
-    v2 min;
-    v2 ext;
-
-    v2 get_min()
-    {
-        return min;
-    }
-    v2 get_max()
-    {
-        return (v2){{{min.x + ext.x, min.y + ext.y}}};
-    }
-    v2 get_a()
-    {
-        return min;
-    }
-    v2 get_b()
-    {
-        return (v2){{{min.x, min.y + ext.y}}};
-    }
-    v2 get_c()
-    {
-        return (v2){{{min.x + ext.x, min.y + ext.y}}};
-    }
-    v2 get_d()
-    {
-        return (v2){{{min.x + ext.x, min.y}}};
-    }
-};
-
-Rect get_rect_for_tilemap_pos(int row, int col)
-{
-    const int tilemap_rows = 16;
-    const int tilemap_cols = 16;
-    f32 q_w = 1.0f / tilemap_rows;
-    f32 q_h = 1.0f / tilemap_cols;
-    Rect result = {
-        .min = (v2){{{q_w * col, 1.0f - q_h * row}}},
-        .ext = (v2){{{q_w, -q_h}}}
-    };
-    return result;
-}
+#include "game.cpp"
 
 int main()
 {
@@ -96,14 +50,17 @@ int main()
 
     bool show_demo_window = true;
 
-    GLuint tiles_shader = GLTiles::gl_create_tiles_shader();
     GLTiles::Vert_Buf *vb = GLTiles::vb_make();
+    game_init(vb);
+
+    GLuint tiles_shader = GLTiles::gl_create_tiles_shader();
 
     GLTiles::Texture tex = GLTiles::gl_load_texture("res/tileset.png", GL_NEAREST, true);
     trace("tex: %d; ch: %d", tex.texture_id, tex.ch);
 
     glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    glDisable(GL_DEPTH_TEST);
 
     while (!glfwWindowShouldClose(window))
     {
@@ -115,84 +72,53 @@ int main()
             continue;
         }
 
+        int fb_w, fb_h;
+        glfwGetFramebufferSize(window, &fb_w, &fb_h);
+        glViewport(0, 0, fb_w, fb_h);
+
         int w, h;
-        glfwGetFramebufferSize(window, &w, &h);
-        glViewport(0, 0, w, h);
-
-        glClearColor(0.86f, 0.18f, 0.26f, 1.0f);
-        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-
-        glUseProgram(tiles_shader);
-
-        GLTiles::vb_clear(vb);
-
-        {
-            int index_base = GLTiles::vb_next_vert_index(vb);
-            v2 a = (v2){{{-0.5f,  0.5f}}};
-            v2 b = (v2){{{-0.5f, -0.5f}}};
-            v2 c = (v2){{{ 0.5f, -0.5f}}};
-            v2 d = (v2){{{ 0.5f,  0.5f}}};
-
-            int glyph_row = 0;
-            int glyph_col = 1;
-            Rect q = get_rect_for_tilemap_pos(glyph_row, glyph_col);
-            trace("glyph rect: %f, %f, %f, %f", q.min.x, q.min.y, q.ext.x, q.ext.y);
-
-            v2 t_a = q.get_a();
-            v2 t_b = q.get_b();
-            v2 t_c = q.get_c();
-            v2 t_d = q.get_d();
-
-            v4 fg_color = (v4){{{0.0f, 0.0f, 1.0f, 1.0f}}};
-            v4 bg_color = (v4){{{1.0f, 1.0f, 1.0f, 1.0f}}};
-
-            glBindTexture(GL_TEXTURE_2D, tex.texture_id);
-
-            GLTiles::vb_add_vert(vb, GLTiles::make_vert(a, t_a, fg_color, bg_color));
-            GLTiles::vb_add_vert(vb, GLTiles::make_vert(b, t_b, fg_color, bg_color));
-            GLTiles::vb_add_vert(vb, GLTiles::make_vert(c, t_c, fg_color, bg_color));
-            GLTiles::vb_add_vert(vb, GLTiles::make_vert(d, t_d, fg_color, bg_color));
-
-            GLTiles::vb_add_indices(vb, index_base, (int[]){0, 1, 3, 1, 2, 3}, 6);
-        }
-        {
-            int index_base = GLTiles::vb_next_vert_index(vb);
-            v2 a = (v2){{{-0.5f,  0.5f}}};
-            v2 b = (v2){{{-0.5f, -0.5f}}};
-            v2 c = (v2){{{ 0.5f, -0.5f}}};
-            v2 d = (v2){{{ 0.5f,  0.5f}}};
-
-            int glyph_row = 3;
-            int glyph_col = 3;
-            Rect q = get_rect_for_tilemap_pos(glyph_row, glyph_col);
-            trace("glyph rect: %f, %f, %f, %f", q.min.x, q.min.y, q.ext.x, q.ext.y);
-
-            v2 t_a = q.get_a();
-            v2 t_b = q.get_b();
-            v2 t_c = q.get_c();
-            v2 t_d = q.get_d();
-
-            v4 fg_color = (v4){{{0.0f, 1.0f, 0.0f, 0.5f}}};
-            v4 bg_color = (v4){{{1.0f, 1.0f, 1.0f, 0.5f}}};
-
-            glBindTexture(GL_TEXTURE_2D, tex.texture_id);
-
-            // GLTiles::vb_add_vert(vb, GLTiles::make_vert(a, t_a, fg_color, bg_color));
-            // GLTiles::vb_add_vert(vb, GLTiles::make_vert(b, t_b, fg_color, bg_color));
-            // GLTiles::vb_add_vert(vb, GLTiles::make_vert(c, t_c, fg_color, bg_color));
-            // GLTiles::vb_add_vert(vb, GLTiles::make_vert(d, t_d, fg_color, bg_color));
-
-            // GLTiles::vb_add_indices(vb, index_base, (int[]){0, 1, 3, 1, 2, 3}, 6);
-        }
-
-        GLTiles::vb_draw_call(vb);
+        glfwGetWindowSize(window, &w, &h);
 
         ImGui_ImplOpenGL3_NewFrame();
         ImGui_ImplGlfw_NewFrame();
         ImGui::NewFrame();
 
+        glClearColor(0.86f, 0.18f, 0.26f, 1.0f);
+        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
+        glUseProgram(tiles_shader);
+        glBindTexture(GL_TEXTURE_2D, tex.texture_id);
+        m4 proj = m4_proj_ortho(0, w, h, 0, -1, 1);
+        glUniformMatrix4fv(glGetUniformLocation(tiles_shader, "uMvp"), 1, GL_FALSE, proj.d);
+
+        GLTiles::vb_clear(vb);
+
+        GameState *gs = get_game_state();
+
+        int vert_count = gs->vb->vert_count;
+        draw_level();
+        int level_verts = gs->vb->vert_count - vert_count;
+
+        vert_count = gs->vb->vert_count;
+        draw_player();
+        int player_verts = gs->vb->vert_count - vert_count;
+        vert_count = gs->vb->vert_count;
+
+        GLTiles::vb_draw_call(vb);
+
         if (show_demo_window)
             ImGui::ShowDemoWindow(&show_demo_window);
+
+        ImGui::Begin("Debug");
+        ImGui::InputFloat("Player X", &gs->player_pos.x);
+        ImGui::InputFloat("Player Y", &gs->player_pos.y);
+        ImGui::Separator();
+        ImGui::InputFloat("Glyph Dim", &gs->glyph_dim);
+        ImGui::Separator();
+        ImGui::BulletText("Level verts: %d", level_verts);
+        ImGui::BulletText("Player verts: %d", player_verts);
+        ImGui::BulletText("Total verts: %d", vert_count);
+        ImGui::End();
 
         ImGui::Render();
         ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
@@ -210,3 +136,5 @@ int main()
     return 0;
 }
 
+#define STB_IMAGE_IMPLEMENTATION
+#include <stb_image.h>

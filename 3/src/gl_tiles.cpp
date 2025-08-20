@@ -31,8 +31,8 @@ namespace GLTiles
         return v;
     }
 
-    #define VERT_MAX 4096
-    #define INDEX_MAX 8192
+    #define VERT_MAX 65536
+    #define INDEX_MAX 131072
     struct Vert_Buf
     {
         Vert verts[VERT_MAX];
