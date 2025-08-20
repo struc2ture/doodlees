@@ -73,3 +73,20 @@ struct v4i
         struct { i32 d[4]; };
     };
 };
+
+/*
+ * OpenGL expects column-major.
+ * m[column][row]
+ * m[column * 4 + row]
+ * M00 M01 M02 M03
+ * M10 M11 M12 M13
+ * M20 M21 M22 M23
+ * M30 M31 M32 M33
+ *
+ * Laid out in memory like this:
+ * M00 M10 M20 M30 M01 M11 ...
+ */
+struct m4
+{
+    f32 d[16];
+};
