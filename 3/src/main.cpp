@@ -94,6 +94,32 @@ int main()
         GLTiles::vb_clear(vb);
 
         GameState *gs = get_game_state();
+        gs->player_move_input = (v2){};
+
+        if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS)
+        {
+            gs->player_move_input.y -= 1.0f;
+        }
+        if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS)
+        {
+            gs->player_move_input.y += 1.0f;
+        }
+        if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS)
+        {
+            gs->player_move_input.x -= 1.0f;
+        }
+        if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS)
+        {
+            gs->player_move_input.x += 1.0f;
+        }
+
+        if (v2_length(gs->player_move_input) > 0.01f)
+        {
+            gs->player_move_input = v2_normalize(gs->player_move_input);
+            // trace("gs->player_move_input = %f, %f", gs->player_move_input.x, gs->player_move_input.y);
+        }
+
+        process_input(0.33f);
 
         int vert_count = gs->vb->vert_count;
         draw_level();

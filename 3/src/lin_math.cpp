@@ -1,5 +1,7 @@
 #pragma once
 
+#include <cmath>
+
 #include "types.hpp"
 
 static m4 m4_identity()
@@ -40,4 +42,18 @@ static m4 m4_proj_ortho(float left, float right, float bottom, float top, float 
     m.d[15] = 1.0f;
 
     return m;
+}
+
+f32 v2_length(v2 v)
+{
+    f32 length = sqrt(v.x * v.x + v.y * v.y);
+    return length;
+}
+
+v2 v2_normalize(v2 v)
+{
+    f32 length = v2_length(v);
+    v.x /= length;
+    v.y /= length;
+    return v;
 }

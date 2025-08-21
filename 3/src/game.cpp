@@ -143,6 +143,7 @@ struct GameState
     v2 player_pos;
     Level level;
     f32 glyph_dim;
+    v2 player_move_input;
 };
 
 static GameState g_GameState;
@@ -163,6 +164,14 @@ void game_init(GLTiles::Vert_Buf *vb)
 GameState *get_game_state()
 {
     return &g_GameState;
+}
+
+void process_input(f32 delta)
+{
+    GameState *gs = get_game_state();
+    f32 speed = 0.5f;
+    gs->player_pos.x += gs->player_move_input.x * delta * speed;
+    gs->player_pos.y += gs->player_move_input.y * delta * speed;
 }
 
 void draw_tile(Glyph glyph, Rect screen_pos)
