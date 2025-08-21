@@ -1,5 +1,7 @@
 #pragma once
 
+#include <imgui.h>
+
 #include "types.hpp"
 
 #include "gl_tiles.cpp"
@@ -10,7 +12,7 @@
 #define GAME_COLOR_GRAY3 (v4){{{0.5f, 0.5f, 0.5f, 1.0f}}}
 #define GAME_COLOR_GRAY4 (v4){{{0.7f, 0.7f, 0.7f, 1.0f}}}
 #define GAME_COLOR_GRAY5 (v4){{{0.85f, 0.85f, 0.85f, 1.0f}}}
-#define GAME_COLOR_ENTITY_BG (v4){{{0.1f, 0.1f, 0.1f, 0.5f}}}
+#define GAME_COLOR_ENTITY_BG (v4){{{0.3f, 0.3f, 0.3f, 0.8f}}}
 
 struct Rect
 {
@@ -62,7 +64,7 @@ Rect get_rect_for_tilemap_glyph(Glyph g)
     return result;
 }
 
-enum MapTile
+enum MapTileKind
 {
     MAP_TILE_NONE,
     MAP_TILE_GROUND,
@@ -70,20 +72,42 @@ enum MapTile
     MAP_TILE_COUNT
 };
 
-Glyph get_glyph_for_map_tile(MapTile map_tile)
+struct MapTile
 {
-    switch(map_tile)
+    MapTileKind kind;
+    bool is_blocking;
+    bool is_opaque;
+
+    Glyph get_glyph()
     {
-        case MAP_TILE_GROUND: return (Glyph){14, 2, GAME_COLOR_GRAY3, GAME_COLOR_GRAY1};
-        case MAP_TILE_WALL:   return (Glyph){3, 2,  GAME_COLOR_GRAY4, GAME_COLOR_GRAY1};
-        default:              return (Glyph){0, 0,  GAME_COLOR_RED,   GAME_COLOR_RED};
+        switch(kind)
+        {
+            case MAP_TILE_GROUND: return (Glyph){14, 2, GAME_COLOR_GRAY3, GAME_COLOR_GRAY1};
+            case MAP_TILE_WALL:   return (Glyph){3, 2,  GAME_COLOR_GRAY4, GAME_COLOR_GRAY1};
+            default:              return (Glyph){0, 0,  GAME_COLOR_RED,   GAME_COLOR_RED};
+        }
     }
-}
+
+    const char *get_name()
+    {
+        switch (kind)
+        {
+            case MAP_TILE_GROUND: return "Ground";
+            case MAP_TILE_WALL: return "Wall";
+
+            case MAP_TILE_NONE:
+            case MAP_TILE_COUNT:
+                return "Unknown";
+        }
+    }
+};
 
 static inline Glyph get_player_glyph()
 {
     return (Glyph){0, 4, GAME_COLOR_GRAY5, GAME_COLOR_ENTITY_BG};
 }
+
+f32 get_glyph_dim();
 
 struct Level
 {
@@ -112,8 +136,49 @@ struct Level
         else
         {
             warning("Out of bounds map access");
-            return MAP_TILE_NONE;
+            return (MapTile){MAP_TILE_NONE, false, false};
         }
+    }
+
+    MapTile get_tile(v2i p)
+    {
+        return get_tile(p.x, p.y);
+    }
+
+    v2 get_px_size()
+    {
+        v2 size = {{{COLS * get_glyph_dim(), ROWS * get_glyph_dim()}}};
+        return size;
+    }
+
+    v2i px_pos_to_tile_pos(v2 px_pos)
+    {
+        v2i tile_pos = {{{
+            truncate_to_int(px_pos.x / get_glyph_dim()),
+            truncate_to_int(px_pos.y / get_glyph_dim())
+        }}};
+        return tile_pos;
+    }
+
+    v2i world_pos_to_tile_pos(v2 world_pos)
+    {
+        v2i tile_pos = {{{
+            truncate_to_int(world_pos.x),
+            truncate_to_int(world_pos.y)
+        }}};
+        return tile_pos;
+    }
+
+    bool can_move_over_tile(v2i tile_p)
+    {
+        MapTile tile = get_tile(tile_p);
+        return !tile.is_blocking;
+    }
+
+    bool can_move_over_tile(v2 world_pos)
+    {
+        v2i tile_p = world_pos_to_tile_pos(world_pos);
+        return can_move_over_tile(tile_p);
     }
 };
 
@@ -126,11 +191,11 @@ Level generate_level()
         {
             if (row == 0 || row == level.ROWS - 1 || col == 0 || col == level.COLS - 1)
             {
-                level.set_tile(col, row, MAP_TILE_WALL);
+                level.set_tile(col, row, (MapTile){MAP_TILE_WALL, true, true});
             }
             else
             {
-                level.set_tile(col, row, MAP_TILE_GROUND);
+                level.set_tile(col, row, (MapTile){MAP_TILE_GROUND, false, false});
             }
         }
     }
@@ -144,6 +209,9 @@ struct GameState
     Level level;
     f32 glyph_dim;
     v2 player_move_input;
+    bool mouse_left_clicked;
+    v2 mouse_pos;
+    v2i inspect_tile_pos;
 };
 
 static GameState g_GameState;
@@ -166,12 +234,33 @@ GameState *get_game_state()
     return &g_GameState;
 }
 
+void try_move_player(v2 new_p)
+{
+    GameState *gs = get_game_state();
+    if (gs->level.can_move_over_tile(new_p))
+    {
+        gs->player_pos = new_p;
+    }
+}
+
 void process_input(f32 delta)
 {
     GameState *gs = get_game_state();
-    f32 speed = 0.5f;
-    gs->player_pos.x += gs->player_move_input.x * delta * speed;
-    gs->player_pos.y += gs->player_move_input.y * delta * speed;
+    f32 speed = 4.0f;
+    v2 tentative_player_p;
+    tentative_player_p.x = gs->player_pos.x + gs->player_move_input.x * delta * speed;
+    tentative_player_p.y = gs->player_pos.y + gs->player_move_input.y * delta * speed;
+    if (tentative_player_p.x != gs->player_pos.x || tentative_player_p.y != gs->player_pos.y)
+        try_move_player(tentative_player_p);
+
+    if (gs->mouse_left_clicked)
+    {
+        v2 level_px_size = gs->level.get_px_size();
+        if (gs->mouse_pos.x < level_px_size.x && gs->mouse_pos.y < level_px_size.y)
+        {
+            gs->inspect_tile_pos = gs->level.px_pos_to_tile_pos(gs->mouse_pos);
+        }
+    }
 }
 
 void draw_tile(Glyph glyph, Rect screen_pos)
@@ -209,8 +298,7 @@ void draw_level()
     {
         for (int col = 0; col < level->COLS; col++)
         {
-            MapTile map_tile = level->get_tile(col, row);
-            Glyph glyph = get_glyph_for_map_tile(map_tile);
+            Glyph glyph = level->get_tile(col, row).get_glyph();
             draw_tile(glyph, screen_rect);
             screen_rect.min.x += get_glyph_dim();
         }
@@ -227,4 +315,22 @@ void draw_player()
         .ext = (v2){{{get_glyph_dim(), get_glyph_dim()}}}
     };
     draw_tile(g, screen_rect);
+}
+
+void window_game_debug()
+{
+    GameState *gs = get_game_state();
+    ImGui::Begin("Debug");
+    ImGui::InputFloat("Player X", &gs->player_pos.x);
+    ImGui::InputFloat("Player Y", &gs->player_pos.y);
+    ImGui::Separator();
+    ImGui::InputFloat("Glyph Dim", &gs->glyph_dim);
+    ImGui::SeparatorText("Inspect tile");
+    ImGui::BulletText("Pos: %d, %d", gs->inspect_tile_pos.x, gs->inspect_tile_pos.y);
+    MapTile tile = gs->level.get_tile(gs->inspect_tile_pos);
+    ImGui::BulletText("%s", tile.get_name());
+    ImGui::BulletText("Blocking: %s", tile.is_blocking ? "Yes" : "No");
+    ImGui::BulletText("Opaque: %s", tile.is_opaque ? "Yes" : "No");
+    ImGui::End();
+
 }

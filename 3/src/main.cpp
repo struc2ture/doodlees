@@ -11,6 +11,29 @@
 #include "gl_tiles.cpp"
 #include "game.cpp"
 
+void on_mouse_button(GLFWwindow* window, int button, int action, int mods)
+{
+    if (button == GLFW_MOUSE_BUTTON_LEFT)
+    {
+        GameState *gs = get_game_state();
+        if (action == GLFW_PRESS)
+        {
+            gs->mouse_left_clicked = true;
+        }
+        else
+        {
+            gs->mouse_left_clicked = false;
+        }
+    }
+}
+
+void on_mouse_cursor(GLFWwindow* window, double xpos, double ypos)
+{
+    GameState *gs = get_game_state();
+    gs->mouse_pos.x = (f32)xpos;
+    gs->mouse_pos.y = (f32)ypos;
+}
+
 int main()
 {
     glfwInit();
@@ -27,8 +50,8 @@ int main()
 
     // glfwSetCharCallback(window, on_char);
     // glfwSetKeyCallback(window, on_key);
-    // glfwSetCursorPosCallback(window, on_mouse_cursor);
-    // glfwSetMouseButtonCallback(window, on_mouse_button);
+    glfwSetCursorPosCallback(window, on_mouse_cursor);
+    glfwSetMouseButtonCallback(window, on_mouse_button);
     // glfwSetScrollCallback(window, on_scroll);
     // glfwSetFramebufferSizeCallback(window, on_framebuffer_size);
     // glfwSetWindowSizeCallback(window, on_window_size);
@@ -61,6 +84,8 @@ int main()
     glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
     glDisable(GL_DEPTH_TEST);
+
+    f32 delta = 1/120.0f;
 
     while (!glfwWindowShouldClose(window))
     {
@@ -119,7 +144,7 @@ int main()
             // trace("gs->player_move_input = %f, %f", gs->player_move_input.x, gs->player_move_input.y);
         }
 
-        process_input(0.33f);
+        process_input(delta);
 
         int vert_count = gs->vb->vert_count;
         draw_level();
@@ -135,16 +160,13 @@ int main()
         if (show_demo_window)
             ImGui::ShowDemoWindow(&show_demo_window);
 
-        ImGui::Begin("Debug");
-        ImGui::InputFloat("Player X", &gs->player_pos.x);
-        ImGui::InputFloat("Player Y", &gs->player_pos.y);
-        ImGui::Separator();
-        ImGui::InputFloat("Glyph Dim", &gs->glyph_dim);
-        ImGui::Separator();
+        ImGui::Begin("Render Debug");
         ImGui::BulletText("Level verts: %d", level_verts);
         ImGui::BulletText("Player verts: %d", player_verts);
         ImGui::BulletText("Total verts: %d", vert_count);
         ImGui::End();
+
+        window_game_debug();
 
         ImGui::Render();
         ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
