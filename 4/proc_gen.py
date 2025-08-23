@@ -7,6 +7,9 @@ class V2I:
 
     def __repr__(self):
         return f'V2({self.x}, {self.y})'
+    
+    def add(self, v):
+        return V2I(self.x + v.x, self.y + v.y)
 
 class Map:
     cols = 128
@@ -32,6 +35,17 @@ class Map:
                 str += self.get_tile(col, row)
             str += "\n"
         return str
+
+    def get_map_center(self):
+        return V2I(self.cols / 2, self.rows / 2)
+
+    def get_fill_rate(self, desired_tile):
+        desired_tiles = 0
+        for row in range(self.rows):
+            for col in range(self.cols):
+                if self.get_tile(col, row) == desired_tile:
+                    desired_tiles += 1
+        return desired_tiles / (self.rows * self.cols)
 
     def generate_box(self):
         for row in range(self.rows):
@@ -94,6 +108,31 @@ class Map:
             b = self.rooms[i + 1]
             self.carve_corridor(a.get_center(), b.get_center())
 
+        print(f"Generated rooms: {len(map.rooms)}")
+
+    def generate_random_walk(self, desired_fill_rate):
+        self.fill('#')
+        center_pos = self.get_map_center()
+        starting_pos = V2I(random.randint(center_pos.x - 5, center_pos.x + 5), random.randint(center_pos.y - 5, center_pos.y + 5))
+        self.set_tile(starting_pos.x, starting_pos.y, '.')
+        curr_pos = starting_pos
+        total_tiles = self.cols * self.rows
+        placed_tiles = 0
+        fill_rate = placed_tiles / total_tiles
+        iterations = 0
+        while fill_rate < desired_fill_rate:
+            next_dir = random.choice([V2I(1, 0), V2I(-1, 0), V2I(0, 1), V2I(0, -1)])
+            tentative_pos = curr_pos.add(next_dir)
+            if self.bound_check(tentative_pos.x, tentative_pos.y):
+                curr_pos = tentative_pos
+            if self.get_tile(curr_pos.x, curr_pos.y) != '.':
+                self.set_tile(curr_pos.x, curr_pos.y, '.')
+                placed_tiles += 1
+                fill_rate = placed_tiles / total_tiles
+            iterations += 1
+
+        print(f"Random walk: Achieved fill_rate {fill_rate} after {iterations} iterations")
+
     class Room:
         def __init__(self, x, y, w, h):
             self.x = x
@@ -132,7 +171,9 @@ def swap_in_order(x0, x1):
 def main():
     map = Map()
     tiles = [' '] * 4 * 4
-    map.generate_rooms()
+    # map.generate_box()
+    # map.generate_rooms()
+    map.generate_random_walk(0.6)
     print(map.get_str())
 
 if __name__ == "__main__":
