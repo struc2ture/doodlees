@@ -10,7 +10,20 @@ ITEMS = [
     'Round stone',
     'Slingshot',
     'Sling',
-    'Piece of old-world circuitry'
+    'Piece of old-world circuitry',
+    'Bandage',
+    'Burnt book',
+    'Schematic',
+    'Stick',
+    'Stale loaf of bread',
+    'Glass bottle',
+    'Blown glass figurine',
+    'Glass ice',
+    'Brown dust',
+    'Bear claw',
+    'Glass mask',
+    'Broken glasses',
+    
 ]
 
 def main():
