@@ -1,336 +1,275 @@
 #pragma once
 
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
+#include <vector>
+
 #include <imgui.h>
 
 #include "types.hpp"
 
 #include "gl_tiles.cpp"
+#include "util.hpp"
 
-#define GAME_COLOR_BLACK (v4){{{0.0f, 0.0f, 0.0f, 1.0f}}}
-#define GAME_COLOR_RED   (v4){{{1.0f, 0.0f, 0.0f, 1.0f}}}
-#define GAME_COLOR_GRAY1 (v4){{{0.1f, 0.1f, 0.1f, 1.0f}}}
-#define GAME_COLOR_GRAY3 (v4){{{0.5f, 0.5f, 0.5f, 1.0f}}}
-#define GAME_COLOR_GRAY4 (v4){{{0.7f, 0.7f, 0.7f, 1.0f}}}
-#define GAME_COLOR_GRAY5 (v4){{{0.85f, 0.85f, 0.85f, 1.0f}}}
-#define GAME_COLOR_ENTITY_BG (v4){{{0.3f, 0.3f, 0.3f, 0.8f}}}
-
-struct Rect
+const char *AGENT_NAMES[] =
 {
-    v2 min;
-    v2 ext;
-
-    v2 get_min()
-    {
-        return min;
-    }
-    v2 get_max()
-    {
-        return (v2){{{min.x + ext.x, min.y + ext.y}}};
-    }
-    v2 get_a()
-    {
-        return min;
-    }
-    v2 get_b()
-    {
-        return (v2){{{min.x, min.y + ext.y}}};
-    }
-    v2 get_c()
-    {
-        return (v2){{{min.x + ext.x, min.y + ext.y}}};
-    }
-    v2 get_d()
-    {
-        return (v2){{{min.x + ext.x, min.y}}};
-    }
+    "Humgef",
+    "Haliser",
+    "Kierty",
+    "Giolist",
+    "Leemper"
 };
 
-struct Glyph
+static const char *_get_random_agent_name()
 {
-    int col, row;
-    v4 fg_color, bg_color;
-};
-
-Rect get_rect_for_tilemap_glyph(Glyph g)
-{
-    const int tilemap_rows = 16;
-    const int tilemap_cols = 16;
-    f32 q_w = 1.0f / tilemap_rows;
-    f32 q_h = 1.0f / tilemap_cols;
-    Rect result = {
-        .min = (v2){{{q_w * g.col, 1.0f - q_h * g.row}}},
-        .ext = (v2){{{q_w, -q_h}}}
-    };
-    return result;
+    int i = rand() % array_size(AGENT_NAMES);
+    return AGENT_NAMES[i];
 }
 
-enum MapTileKind
+const char *NODE_NAMES[] =
 {
-    MAP_TILE_NONE,
-    MAP_TILE_GROUND,
-    MAP_TILE_WALL,
-    MAP_TILE_COUNT
+    "Alpha",
+    "Beta",
+    "Gamma",
+    "Delta",
+    "Epsilon",
+    "Zeta"
 };
 
-struct MapTile
+static const char *_get_random_node_name()
 {
-    MapTileKind kind;
-    bool is_blocking;
-    bool is_opaque;
-
-    Glyph get_glyph()
-    {
-        switch(kind)
-        {
-            case MAP_TILE_GROUND: return (Glyph){14, 2, GAME_COLOR_GRAY3, GAME_COLOR_GRAY1};
-            case MAP_TILE_WALL:   return (Glyph){3, 2,  GAME_COLOR_GRAY4, GAME_COLOR_GRAY1};
-            default:              return (Glyph){0, 0,  GAME_COLOR_RED,   GAME_COLOR_RED};
-        }
-    }
-
-    const char *get_name()
-    {
-        switch (kind)
-        {
-            case MAP_TILE_GROUND: return "Ground";
-            case MAP_TILE_WALL: return "Wall";
-
-            case MAP_TILE_NONE:
-            case MAP_TILE_COUNT:
-                return "Unknown";
-        }
-    }
-};
-
-static inline Glyph get_player_glyph()
-{
-    return (Glyph){0, 4, GAME_COLOR_GRAY5, GAME_COLOR_ENTITY_BG};
+    int i = rand() % array_size(NODE_NAMES);
+    return NODE_NAMES[i];
 }
 
-f32 get_glyph_dim();
-
-struct Level
+struct Node
 {
-    static constexpr int COLS = 32;
-    static constexpr int ROWS = 32;
-    MapTile tiles[ROWS][COLS];
+    char name_buf[STR_BUF_SMALL];
+    bool is_window_open = false;
 
-    void set_tile(int col, int row, MapTile tile)
-    {
-        if (col >= 0 && col < COLS && row >= 0 && row < ROWS)
-        {
-            tiles[row][col] = tile;
-        }
-        else
-        {
-            warning("Out of bounds map access");
-        }
-    }
+    int payloads_received = 0;
 
-    MapTile get_tile(int col, int row)
+    Node(const char *name)
     {
-        if (col >= 0 && col < COLS && row >= 0 && row < ROWS)
-        {
-            return tiles[row][col];
-        }
-        else
-        {
-            warning("Out of bounds map access");
-            return (MapTile){MAP_TILE_NONE, false, false};
-        }
-    }
-
-    MapTile get_tile(v2i p)
-    {
-        return get_tile(p.x, p.y);
-    }
-
-    v2 get_px_size()
-    {
-        v2 size = {{{COLS * get_glyph_dim(), ROWS * get_glyph_dim()}}};
-        return size;
-    }
-
-    v2i px_pos_to_tile_pos(v2 px_pos)
-    {
-        v2i tile_pos = {{{
-            truncate_to_int(px_pos.x / get_glyph_dim()),
-            truncate_to_int(px_pos.y / get_glyph_dim())
-        }}};
-        return tile_pos;
-    }
-
-    v2i world_pos_to_tile_pos(v2 world_pos)
-    {
-        v2i tile_pos = {{{
-            truncate_to_int(world_pos.x),
-            truncate_to_int(world_pos.y)
-        }}};
-        return tile_pos;
-    }
-
-    bool can_move_over_tile(v2i tile_p)
-    {
-        MapTile tile = get_tile(tile_p);
-        return !tile.is_blocking;
-    }
-
-    bool can_move_over_tile(v2 world_pos)
-    {
-        v2i tile_p = world_pos_to_tile_pos(world_pos);
-        return can_move_over_tile(tile_p);
+        strcpy(this->name_buf, name);
     }
 };
 
-Level generate_level()
+struct Agent
 {
-    Level level;
-    for (int row = 0; row < level.ROWS; row++)
+    char name_buf[STR_BUF_SMALL];
+    bool is_window_open = false;
+    size_t node_a = 0;
+    size_t node_b = 0;
+    float progress = 0.0f;
+    float progress_rate = 0.3f;
+    bool travelling_from_b = false;
+
+    Agent(const char *name)
     {
-        for (int col = 0; col < level.COLS; col++)
+        strcpy(this->name_buf, name);
+    }
+
+    inline bool destinations_valid()
+    {
+        return node_a > 0 && node_b > 0 && node_a != node_b;
+    }
+
+    void update_progress(std::vector<Node> *nodes, float delta)
+    {
+        if (destinations_valid())
         {
-            if (row == 0 || row == level.ROWS - 1 || col == 0 || col == level.COLS - 1)
+            progress += delta * progress_rate;
+        }
+        if (progress > 1.0f)
+        {
+            if (!travelling_from_b)
             {
-                level.set_tile(col, row, (MapTile){MAP_TILE_WALL, true, true});
+                (*nodes)[node_b].payloads_received++;
             }
             else
             {
-                level.set_tile(col, row, (MapTile){MAP_TILE_GROUND, false, false});
+                (*nodes)[node_a].payloads_received++;
+            }
+            travelling_from_b = !travelling_from_b;
+            progress = 0.0f;
+        }
+    }
+};
+
+struct Game
+{
+    std::vector<Agent> agents;
+    std::vector<Node> nodes;
+
+    char agent_list_name_edit_buf[STR_BUF_SMALL];
+    char node_list_name_edit_buf[STR_BUF_SMALL];
+
+    void init()
+    {
+        srand(0);
+        agents.push_back(Agent("NONE"));
+        nodes.push_back(Node("NONE"));
+        strcpy(agent_list_name_edit_buf, _get_random_agent_name());
+        strcpy(node_list_name_edit_buf, _get_random_node_name());
+    }
+
+    void frame(float delta)
+    {
+        for (size_t i = 1; i < agents.size(); i++)
+        {
+            agents[i].update_progress(&nodes, delta);
+        }
+
+        draw_agent_list_window();
+
+        draw_agent_windows();
+
+        draw_node_list_window();
+
+        draw_node_windows();
+    }
+
+    void draw_agent_list_window()
+    {
+        ImGui::Begin("Agents");
+
+        ImGui::InputText("Name", agent_list_name_edit_buf, sizeof(agent_list_name_edit_buf));
+        ImGui::SameLine();
+        if (ImGui::Button("Add"))
+        {
+            agents.push_back(Agent(agent_list_name_edit_buf));
+            strcpy(agent_list_name_edit_buf, _get_random_agent_name());
+        }
+
+        char item_name_buf[STR_BUF_SMALL];
+        for (size_t i = 1; i < agents.size(); i++)
+        {
+            ImGui::PushID(agents.data() + i);
+            ImGui::Bullet();
+            snprintf(item_name_buf, sizeof(item_name_buf), "Agent %s", agents[i].name_buf);
+            if (ImGui::TextLink(item_name_buf))
+            {
+                agents[i].is_window_open = !agents[i].is_window_open;
+                trace("%zu: window open = %d", i, agents[i].is_window_open);
+            }
+            ImGui::PopID();
+        }
+
+        ImGui::End();
+    }
+
+    void draw_agent_windows()
+    {
+        for (size_t i = 1; i < agents.size(); i++)
+        {
+            if (agents[i].is_window_open)
+            {
+                ImGui::SetNextWindowSize(ImVec2(200, 200), ImGuiCond_FirstUseEver);
+
+                char window_name_buf[STR_BUF_SMALL];
+                snprintf(window_name_buf, sizeof(window_name_buf), "Agent: %s###Agent%zu", agents[i].name_buf, i);
+
+                if (ImGui::Begin(window_name_buf, &agents[i].is_window_open))
+                {
+                    ImGui::InputText("Name", agents[i].name_buf, sizeof(agents[i].name_buf));
+
+                    if (ImGui::BeginCombo("Node A", nodes[agents[i].node_a].name_buf, 0))
+                    {
+                        for (size_t node_i = 0; node_i < nodes.size(); node_i++)
+                        {
+                            const bool is_selected = agents[i].node_a == node_i;
+                            if (ImGui::Selectable(nodes[node_i].name_buf, is_selected))
+                            {
+                                agents[i].node_a = node_i;
+                            }
+                            if (is_selected)
+                            {
+                                ImGui::SetItemDefaultFocus();
+                            }
+                        }
+                        ImGui::EndCombo();
+                    }
+
+                    if (ImGui::BeginCombo("Node B", nodes[agents[i].node_b].name_buf, 0))
+                    {
+                        for (size_t node_i = 0; node_i < nodes.size(); node_i++)
+                        {
+                            const bool is_selected = agents[i].node_b == node_i;
+                            if (ImGui::Selectable(nodes[node_i].name_buf, is_selected))
+                            {
+                                agents[i].node_b = node_i;
+                            }
+                            if (is_selected)
+                            {
+                                ImGui::SetItemDefaultFocus();
+                            }
+                        }
+                        ImGui::EndCombo();
+                    }
+
+                    if (agents[i].destinations_valid())
+                    {
+                        ImGui::BulletText("Travel direction: %s", agents[i].travelling_from_b ? "B -> A" : "A -> B");
+                    }
+                    ImGui::BulletText("Progress: %.3f", agents[i].progress);
+
+                    ImGui::End();
+                }
             }
         }
     }
-    return level;
-}
 
-struct GameState
-{
-    GLTiles::Vert_Buf *vb;
-    v2 player_pos;
-    Level level;
-    f32 glyph_dim;
-    v2 player_move_input;
-    bool mouse_left_clicked;
-    v2 mouse_pos;
-    v2i inspect_tile_pos;
+    void draw_node_list_window()
+    {
+        ImGui::Begin("Nodes");
+
+        ImGui::InputText("Name", node_list_name_edit_buf, sizeof(node_list_name_edit_buf));
+        ImGui::SameLine();
+        if (ImGui::Button("Add"))
+        {
+            nodes.push_back(Node(node_list_name_edit_buf));
+            strcpy(node_list_name_edit_buf, _get_random_node_name());
+        }
+
+        char item_name_buf[STR_BUF_SMALL];
+        for (size_t i = 1; i < nodes.size(); i++)
+        {
+            ImGui::PushID(nodes.data() + i);
+            ImGui::Bullet();
+            snprintf(item_name_buf, sizeof(item_name_buf), "Node %s", nodes[i].name_buf);
+            if (ImGui::TextLink(item_name_buf))
+            {
+                nodes[i].is_window_open = !nodes[i].is_window_open;
+                trace("%zu: window open = %d", i, nodes[i].is_window_open);
+            }
+            ImGui::PopID();
+        }
+
+        ImGui::End();
+    }
+
+    void draw_node_windows()
+    {
+        for (size_t i = 1; i < nodes.size(); i++)
+        {
+            if (nodes[i].is_window_open)
+            {
+                ImGui::SetNextWindowSize(ImVec2(200, 200), ImGuiCond_FirstUseEver);
+
+                char window_name_buf[STR_BUF_SMALL];
+                snprintf(window_name_buf, sizeof(window_name_buf), "Node: %s###Node%zu", nodes[i].name_buf, i);
+
+                if (ImGui::Begin(window_name_buf, &nodes[i].is_window_open))
+                {
+                    ImGui::InputText("Name", nodes[i].name_buf, sizeof(nodes[i].name_buf));
+
+                    ImGui::BulletText("Payloads received: %d", nodes[i].payloads_received);
+
+                    ImGui::End();
+                }
+            }
+        }
+    }
 };
-
-static GameState g_GameState;
-
-f32 get_glyph_dim()
-{
-    return g_GameState.glyph_dim;
-}
-
-void game_init(GLTiles::Vert_Buf *vb)
-{
-    g_GameState.vb = vb;
-    g_GameState.level = generate_level();
-    g_GameState.player_pos = (v2){{{10.0f, 10.0f}}};
-    g_GameState.glyph_dim = 16.0f;
-}
-
-GameState *get_game_state()
-{
-    return &g_GameState;
-}
-
-void try_move_player(v2 new_p)
-{
-    GameState *gs = get_game_state();
-    if (gs->level.can_move_over_tile(new_p))
-    {
-        gs->player_pos = new_p;
-    }
-}
-
-void process_input(f32 delta)
-{
-    GameState *gs = get_game_state();
-    f32 speed = 4.0f;
-    v2 tentative_player_p;
-    tentative_player_p.x = gs->player_pos.x + gs->player_move_input.x * delta * speed;
-    tentative_player_p.y = gs->player_pos.y + gs->player_move_input.y * delta * speed;
-    if (tentative_player_p.x != gs->player_pos.x || tentative_player_p.y != gs->player_pos.y)
-        try_move_player(tentative_player_p);
-
-    if (gs->mouse_left_clicked)
-    {
-        v2 level_px_size = gs->level.get_px_size();
-        if (gs->mouse_pos.x < level_px_size.x && gs->mouse_pos.y < level_px_size.y)
-        {
-            gs->inspect_tile_pos = gs->level.px_pos_to_tile_pos(gs->mouse_pos);
-        }
-    }
-}
-
-void draw_tile(Glyph glyph, Rect screen_pos)
-{
-    int index_base = GLTiles::vb_next_vert_index(g_GameState.vb);
-    v2 a = screen_pos.get_a();
-    v2 b = screen_pos.get_b();
-    v2 c = screen_pos.get_c();
-    v2 d = screen_pos.get_d();
-
-    Rect q = get_rect_for_tilemap_glyph(glyph);
-    // trace("glyph rect: %f, %f, %f, %f", q.min.x, q.min.y, q.ext.x, q.ext.y);
-
-    v2 t_a = q.get_a();
-    v2 t_b = q.get_b();
-    v2 t_c = q.get_c();
-    v2 t_d = q.get_d();
-
-    GLTiles::vb_add_vert(g_GameState.vb, GLTiles::make_vert(a, t_a, glyph.fg_color, glyph.bg_color));
-    GLTiles::vb_add_vert(g_GameState.vb, GLTiles::make_vert(b, t_b, glyph.fg_color, glyph.bg_color));
-    GLTiles::vb_add_vert(g_GameState.vb, GLTiles::make_vert(c, t_c, glyph.fg_color, glyph.bg_color));
-    GLTiles::vb_add_vert(g_GameState.vb, GLTiles::make_vert(d, t_d, glyph.fg_color, glyph.bg_color));
-
-    GLTiles::vb_add_indices(g_GameState.vb, index_base, (int[]){0, 1, 3, 1, 2, 3}, 6);
-}
-
-void draw_level()
-{
-    Level *level = &g_GameState.level;
-    Rect screen_rect = {
-        .min = (v2){{{0.0f, 0.0f}}},
-        .ext = (v2){{{get_glyph_dim(), get_glyph_dim()}}}
-    };
-    for (int row = 0; row < level->ROWS; row++)
-    {
-        for (int col = 0; col < level->COLS; col++)
-        {
-            Glyph glyph = level->get_tile(col, row).get_glyph();
-            draw_tile(glyph, screen_rect);
-            screen_rect.min.x += get_glyph_dim();
-        }
-        screen_rect.min.x = 0.0f;
-        screen_rect.min.y += get_glyph_dim();
-    }
-}
-
-void draw_player()
-{
-    Glyph g = get_player_glyph();
-    Rect screen_rect = {
-        .min = (v2){{{g_GameState.player_pos.x * get_glyph_dim(), g_GameState.player_pos.y * get_glyph_dim()}}},
-        .ext = (v2){{{get_glyph_dim(), get_glyph_dim()}}}
-    };
-    draw_tile(g, screen_rect);
-}
-
-void window_game_debug()
-{
-    GameState *gs = get_game_state();
-    ImGui::Begin("Debug");
-    ImGui::InputFloat("Player X", &gs->player_pos.x);
-    ImGui::InputFloat("Player Y", &gs->player_pos.y);
-    ImGui::Separator();
-    ImGui::InputFloat("Glyph Dim", &gs->glyph_dim);
-    ImGui::SeparatorText("Inspect tile");
-    ImGui::BulletText("Pos: %d, %d", gs->inspect_tile_pos.x, gs->inspect_tile_pos.y);
-    MapTile tile = gs->level.get_tile(gs->inspect_tile_pos);
-    ImGui::BulletText("%s", tile.get_name());
-    ImGui::BulletText("Blocking: %s", tile.is_blocking ? "Yes" : "No");
-    ImGui::BulletText("Opaque: %s", tile.is_opaque ? "Yes" : "No");
-    ImGui::End();
-
-}
