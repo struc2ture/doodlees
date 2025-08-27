@@ -12,29 +12,31 @@
 #include "gl_tiles.cpp"
 #include "util.hpp"
 
+// Ontological ring
 struct Payload
 {
     enum class Kind : int
     {
         NONE,
         Love,
+        Death,
         Salt,
-        Dream,
+        WillowBranches,
         Asparagus,
         Spinach,
-        WillowBranches,
-        SealedLetter,
         WatermelonSlices,
-        Notebook,
-        Sun,
         Moon,
-        Earth,
-        Heaven,
-        Location,
-        Logos,
-        Kairos,
-        Employment,
+        Dream,
         Longing,
+        Notebook,
+        SealedLetter,
+        Heaven,
+        Sun,
+        Earth,
+        Employment,
+        Logos,
+        Location,
+        Kairos,
         COUNT
     };
 
@@ -84,6 +86,14 @@ struct Payload
     }
 };
 
+struct Contraption
+{
+    enum class Kind : int
+    {
+
+    };
+};
+
 struct Node
 {
     char name_buf[STR_BUF_SMALL];
@@ -93,24 +103,82 @@ struct Node
 
     Node(const char *name)
     {
-        trace("payload size: %zu", sizeof(payload_counts));
         memset(payload_counts, 0, sizeof(payload_counts));
         strcpy(this->name_buf, name);
+    }
+
+    Node(const char *name, int default_payload_count) : Node(name)
+    {
+        for (int i = 0; i < (int)Payload::Kind::COUNT; i++)
+        {
+            payload_counts[i] = default_payload_count;
+        }
     }
 
     static const char *get_random_name()
     {
         const char *names[] =
         {
-            "Alpha",
             "Beta",
             "Gamma",
             "Delta",
             "Epsilon",
-            "Zeta"
+            "Zeta",
+            "Eta",
         };
         int i = rand() % array_size(names);
         return names[i];
+    }
+
+    inline int get_total_payload_count()
+    {
+        int total_count = 0;
+        for (int i = 0; i < (int)Payload::Kind::COUNT; i++)
+        {
+            total_count += payload_counts[i];
+        }
+        return total_count;
+    }
+
+    inline int *get_payload_count_ptr(Payload::Kind kind)
+    {
+        return &payload_counts[(int)kind];
+    }
+
+    bool any_payload()
+    {
+        for (int kind_i = 1; kind_i < (int)Payload::Kind::COUNT; kind_i++)
+        {
+            if (payload_counts[kind_i] > 0)
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    Payload::Kind retrieve_random_payload()
+    {
+        Payload::Kind kind = Payload::Kind::NONE;
+
+
+        std::vector<Payload::Kind> available_kinds;
+        for (int kind_i = 1; kind_i < (int)Payload::Kind::COUNT; kind_i++)
+        {
+            if (payload_counts[kind_i] > 0) available_kinds.push_back((Payload::Kind)kind_i);
+        }
+
+        if (available_kinds.size() > 0)
+        {
+            kind = available_kinds[rand() % available_kinds.size()];
+        }
+
+        (*get_payload_count_ptr(kind))--;
+
+        trace("Retrieved random payload from %s: %s", name_buf, Payload::get_kind_string(kind));
+
+        return kind;
     }
 };
 
@@ -128,12 +196,27 @@ struct Agent
     Agent(const char *name)
     {
         strcpy(this->name_buf, name);
-        carried_payload = {Payload::get_random_kind()};
     }
 
     inline bool destinations_valid()
     {
         return node_a > 0 && node_b > 0 && node_a != node_b;
+    }
+
+    void start_delivery(std::vector<Node> &nodes)
+    {
+        size_t which_node = travelling_from_b ? node_b : node_a;
+
+        trace("Starting delivery from %s to %s.", travelling_from_b ? "B" : "A", travelling_from_b ? "A" : "B");
+
+        if (nodes[which_node].get_total_payload_count() > 10)
+        {
+            carried_payload = {nodes[which_node].retrieve_random_payload()};
+        }
+        else
+        {
+            carried_payload = {Payload::Kind::NONE};
+        }
     }
 
     void finish_delivery(std::vector<Node> &nodes)
@@ -145,7 +228,6 @@ struct Agent
             else node_index = node_a;
             nodes[node_index].payload_counts[(int)carried_payload.kind]++;
         }
-        carried_payload = {Payload::get_random_kind()};
         travelling_from_b = !travelling_from_b;
         progress = 0.0f;
     }
@@ -154,11 +236,17 @@ struct Agent
     {
         if (destinations_valid())
         {
+            if (progress <= 0.0f)
+            {
+                start_delivery(nodes);
+            }
+
             progress += delta * progress_rate;
-        }
-        if (progress > 1.0f)
-        {
-            finish_delivery(nodes);
+
+            if (progress > 1.0f)
+            {
+                finish_delivery(nodes);
+            }
         }
     }
 
@@ -184,6 +272,8 @@ struct Game
 
     char agent_list_name_edit_buf[STR_BUF_SMALL];
     char node_list_name_edit_buf[STR_BUF_SMALL];
+
+    bool alpha_node_exists = false;
 
     void init()
     {
@@ -305,9 +395,17 @@ struct Game
     {
         ImGui::Begin("Nodes");
 
+        ImGui::BeginDisabled(alpha_node_exists);
+        if (ImGui::Button("Add alpha"))
+        {
+            alpha_node_exists = true;
+            nodes.push_back(Node("Alpha", 10));
+        }
+        ImGui::EndDisabled();   
+
         ImGui::InputText("Name", node_list_name_edit_buf, sizeof(node_list_name_edit_buf));
         ImGui::SameLine();
-        if (ImGui::Button("Add"))
+        if (ImGui::Button("Add regular"))
         {
             nodes.push_back(Node(node_list_name_edit_buf));
             strcpy(node_list_name_edit_buf, Node::get_random_name());
@@ -345,17 +443,7 @@ struct Game
                 {
                     ImGui::InputText("Name", nodes[node_i].name_buf, sizeof(nodes[node_i].name_buf));
 
-                    bool any_payloads = false;
-                    for (int kind_i = 1; kind_i < (int)Payload::Kind::COUNT; kind_i++)
-                    {
-                        if (nodes[node_i].payload_counts[kind_i] > 0)
-                        {
-                            any_payloads = true;
-                            break;
-                        }
-                    }
-
-                    if (any_payloads)
+                    if (nodes[node_i].any_payload())
                     {
                         ImGui::Text("Payloads:");
                         for (int kind_i = 1; kind_i < (int)Payload::Kind::COUNT; kind_i++)
