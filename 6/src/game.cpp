@@ -54,24 +54,25 @@ struct Payload
         {
             case Kind::NONE: return "NONE";
             case Kind::Love: return "Love";
+            case Kind::Death: return "Death";
             case Kind::Salt: return "Salt";
-            case Kind::Dream: return "Dream";
+            case Kind::WillowBranches: return "Willow Branches";
             case Kind::Asparagus: return "Asparagus";
             case Kind::Spinach: return "Spinach";
-            case Kind::WillowBranches: return "Willow Branches";
-            case Kind::SealedLetter: return "Sealed Letter";
             case Kind::WatermelonSlices: return "Watermelon Slices";
-            case Kind::Notebook: return "Notebook";
-            case Kind::Sun: return "Sun";
             case Kind::Moon: return "Moon";
-            case Kind::Earth: return "Earth";
-            case Kind::Heaven: return "Heaven";
-            case Kind::Location: return "Location";
-            case Kind::Logos: return "Logos";
-            case Kind::Kairos: return "Kairos";
-            case Kind::Employment: return "Employment";
+            case Kind::Dream: return "Dream";
             case Kind::Longing: return "Longing";
-            default: return "UNKNOWN";
+            case Kind::Notebook: return "Notebook";
+            case Kind::SealedLetter: return "Sealed Letter";
+            case Kind::Heaven: return "Heaven";
+            case Kind::Sun: return "Sun";
+            case Kind::Earth: return "Earth";
+            case Kind::Employment: return "Employment";
+            case Kind::Logos: return "Logos";
+            case Kind::Location: return "Location";
+            case Kind::Kairos: return "Kairos";
+            case Kind::COUNT: return "UNKNOWN";
         }
     }
 
@@ -97,6 +98,7 @@ struct Node
         COUNT
     };
 
+
     char name_buf[STR_BUF_SMALL];
     Kind kind;
 
@@ -121,6 +123,22 @@ struct Node
             Payload::Kind random_kind = (Payload::Kind)(rand() % (int)Payload::Kind::COUNT);
             add_payload_to_output_buffer(random_kind, 1);
         }
+    }
+
+    static const char *get_kind_str(Kind kind)
+    {
+        switch (kind)
+        {
+            case Kind::NONE: return "NONE";
+            case Kind::Storage: return "Storage";
+            case Kind::Transmuter: return "Transmuter";
+            default: return "UNKNOWN";
+        }
+    }
+
+    const char *get_kind_str()
+    {
+        return get_kind_str(kind);
     }
 
     static const char *get_random_name()
@@ -207,10 +225,11 @@ struct Node
         {
             for (auto it = input_buffer.begin(); it != input_buffer.end(); it++)
             {
-                remove_payload_from_input_buffer(it->first, it->second);
-                Payload::Kind new_kind = (Payload::Kind)(((int)it->first + 1) % (int)Payload::Kind::COUNT);
-                if (new_kind == Payload::Kind::NONE) new_kind = (Payload::Kind)1;
-                add_payload_to_output_buffer(new_kind, it->second);
+                int count = it->second;
+                remove_payload_from_input_buffer(it->first, count);
+                Payload::Kind new_kind = (Payload::Kind)((int)it->first + 1);
+                if (new_kind >= Payload::Kind::COUNT) new_kind = (Payload::Kind)1;
+                add_payload_to_output_buffer(new_kind, count);
             }
             progress = 0.0f;
         }
@@ -242,9 +261,9 @@ struct Agent
     {
         size_t which_node = travelling_from_b ? node_b : node_a;
 
-        trace("Starting delivery from %s to %s.", travelling_from_b ? "B" : "A", travelling_from_b ? "A" : "B");
+        // trace("Starting delivery from %s to %s.", travelling_from_b ? "B" : "A", travelling_from_b ? "A" : "B");
 
-        if (nodes[which_node].get_output_payload_count() > 1)
+        if (nodes[which_node].get_output_payload_count() > 0)
         {
             carried_payload = {nodes[which_node].retrieve_random_output_payload()};
         }
@@ -484,6 +503,8 @@ struct Game
                 if (ImGui::Begin(window_name_buf, &nodes[node_i].is_window_open))
                 {
                     ImGui::InputText("Name", nodes[node_i].name_buf, sizeof(nodes[node_i].name_buf));
+
+                    ImGui::BulletText("Kind: %s", nodes[node_i].get_kind_str());
 
                     ImGui::BulletText("Progress: %.3f", nodes[node_i].progress);
 
