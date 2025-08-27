@@ -3,6 +3,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <map>
 #include <vector>
 
 #include <imgui.h>
@@ -86,32 +87,39 @@ struct Payload
     }
 };
 
-struct Contraption
-{
-    enum class Kind : int
-    {
-
-    };
-};
-
 struct Node
 {
+    enum class Kind
+    {
+        NONE,
+        Storage,
+        Transmuter,
+        COUNT
+    };
+
     char name_buf[STR_BUF_SMALL];
+    Kind kind;
+
     bool is_window_open = false;
 
-    int payload_counts[(int)Payload::Kind::COUNT];
+    std::map<Payload::Kind, int> input_buffer;
+    std::map<Payload::Kind, int> output_buffer;
 
-    Node(const char *name)
+    float progress = 0.0f;
+    float rate = 0.6f;
+
+    Node(const char *name, Kind kind)
     {
-        memset(payload_counts, 0, sizeof(payload_counts));
+        this->kind = kind;
         strcpy(this->name_buf, name);
     }
 
-    Node(const char *name, int default_payload_count) : Node(name)
+    Node(const char *name, Kind kind, int total_payload_count) : Node(name, kind)
     {
-        for (int i = 0; i < (int)Payload::Kind::COUNT; i++)
+        while (get_output_payload_count() < total_payload_count)
         {
-            payload_counts[i] = default_payload_count;
+            Payload::Kind random_kind = (Payload::Kind)(rand() % (int)Payload::Kind::COUNT);
+            add_payload_to_output_buffer(random_kind, 1);
         }
     }
 
@@ -130,55 +138,82 @@ struct Node
         return names[i];
     }
 
-    inline int get_total_payload_count()
+    void add_payload_to_output_buffer(Payload::Kind kind, int count)
+    {
+        output_buffer[kind] += count;
+    }
+
+    void remove_payload_from_output_buffer(Payload::Kind kind, int count)
+    {
+        if (output_buffer[kind] > 0)
+        {
+            output_buffer[kind] -= count;
+        }
+    }
+
+    void add_payload_to_input_buffer(Payload::Kind kind, int count)
+    {
+        input_buffer[kind] += count;
+    }
+
+    void remove_payload_from_input_buffer(Payload::Kind kind, int count)
+    {
+        if (input_buffer[kind] > 0)
+        {
+            input_buffer[kind] -= count;
+        }
+    }
+
+    inline int get_output_payload_count()
     {
         int total_count = 0;
-        for (int i = 0; i < (int)Payload::Kind::COUNT; i++)
+        for (auto it = output_buffer.begin(); it != output_buffer.end(); it++)
         {
-            total_count += payload_counts[i];
+            if (it->first != Payload::Kind::NONE && it->first != Payload::Kind::COUNT)
+            {
+                total_count += it->second;
+            }
         }
         return total_count;
     }
 
-    inline int *get_payload_count_ptr(Payload::Kind kind)
-    {
-        return &payload_counts[(int)kind];
-    }
-
-    bool any_payload()
-    {
-        for (int kind_i = 1; kind_i < (int)Payload::Kind::COUNT; kind_i++)
-        {
-            if (payload_counts[kind_i] > 0)
-            {
-                return true;
-            }
-        }
-
-        return false;
-    }
-
-    Payload::Kind retrieve_random_payload()
+    Payload::Kind retrieve_random_output_payload()
     {
         Payload::Kind kind = Payload::Kind::NONE;
 
-
         std::vector<Payload::Kind> available_kinds;
-        for (int kind_i = 1; kind_i < (int)Payload::Kind::COUNT; kind_i++)
+        for (auto it = output_buffer.begin(); it != output_buffer.end(); it++)
         {
-            if (payload_counts[kind_i] > 0) available_kinds.push_back((Payload::Kind)kind_i);
+            if (it->second > 0) available_kinds.push_back(it->first);
         }
 
         if (available_kinds.size() > 0)
         {
             kind = available_kinds[rand() % available_kinds.size()];
+            remove_payload_from_output_buffer(kind, 1);
         }
 
-        (*get_payload_count_ptr(kind))--;
-
-        trace("Retrieved random payload from %s: %s", name_buf, Payload::get_kind_string(kind));
-
         return kind;
+    }
+
+    void update_progress(float delta)
+    {
+        if (kind == Kind::Transmuter)
+        {
+            progress += delta * rate;
+        }
+
+        if (progress > 1.0f)
+        {
+            for (auto it = input_buffer.begin(); it != input_buffer.end(); it++)
+            {
+                remove_payload_from_input_buffer(it->first, it->second);
+                Payload::Kind new_kind = (Payload::Kind)(((int)it->first + 1) % (int)Payload::Kind::COUNT);
+                if (new_kind == Payload::Kind::NONE) new_kind = (Payload::Kind)1;
+                add_payload_to_output_buffer(new_kind, it->second);
+            }
+            progress = 0.0f;
+        }
     }
 };
 
@@ -209,9 +244,9 @@ struct Agent
 
         trace("Starting delivery from %s to %s.", travelling_from_b ? "B" : "A", travelling_from_b ? "A" : "B");
 
-        if (nodes[which_node].get_total_payload_count() > 10)
+        if (nodes[which_node].get_output_payload_count() > 1)
         {
-            carried_payload = {nodes[which_node].retrieve_random_payload()};
+            carried_payload = {nodes[which_node].retrieve_random_output_payload()};
         }
         else
         {
@@ -226,7 +261,7 @@ struct Agent
             size_t node_index;
             if (!travelling_from_b) node_index = node_b;
             else node_index = node_a;
-            nodes[node_index].payload_counts[(int)carried_payload.kind]++;
+            nodes[node_index].add_payload_to_input_buffer(carried_payload.kind, 1);
         }
         travelling_from_b = !travelling_from_b;
         progress = 0.0f;
@@ -241,11 +276,13 @@ struct Agent
                 start_delivery(nodes);
             }
 
-            progress += delta * progress_rate;
-
-            if (progress > 1.0f)
+            if (carried_payload.kind != Payload::Kind::NONE)
             {
-                finish_delivery(nodes);
+                progress += delta * progress_rate;
+                if (progress > 1.0f)
+                {
+                    finish_delivery(nodes);
+                }
             }
         }
     }
@@ -279,7 +316,7 @@ struct Game
     {
         srand(0);
         agents.push_back(Agent("NONE"));
-        nodes.push_back(Node("NONE"));
+        nodes.push_back(Node("NONE", Node::Kind::NONE));
         strcpy(agent_list_name_edit_buf, Agent::get_random_name());
         strcpy(node_list_name_edit_buf, Node::get_random_name());
     }
@@ -289,6 +326,11 @@ struct Game
         for (size_t i = 1; i < agents.size(); i++)
         {
             agents[i].update_progress(nodes, delta);
+        }
+
+        for (size_t i = 1; i < nodes.size(); i++)
+        {
+            nodes[i].update_progress(delta);
         }
 
         draw_agent_list_window();
@@ -399,15 +441,15 @@ struct Game
         if (ImGui::Button("Add alpha"))
         {
             alpha_node_exists = true;
-            nodes.push_back(Node("Alpha", 10));
+            nodes.push_back(Node("Alpha", Node::Kind::Storage, 10));
         }
-        ImGui::EndDisabled();   
+        ImGui::EndDisabled();
 
         ImGui::InputText("Name", node_list_name_edit_buf, sizeof(node_list_name_edit_buf));
         ImGui::SameLine();
-        if (ImGui::Button("Add regular"))
+        if (ImGui::Button("Add transmuter"))
         {
-            nodes.push_back(Node(node_list_name_edit_buf));
+            nodes.push_back(Node(node_list_name_edit_buf, Node::Kind::Transmuter));
             strcpy(node_list_name_edit_buf, Node::get_random_name());
         }
 
@@ -443,15 +485,23 @@ struct Game
                 {
                     ImGui::InputText("Name", nodes[node_i].name_buf, sizeof(nodes[node_i].name_buf));
 
-                    if (nodes[node_i].any_payload())
+                    ImGui::BulletText("Progress: %.3f", nodes[node_i].progress);
+
+                    ImGui::Text("Input buffer:");
+                    for (auto it = nodes[node_i].input_buffer.begin(); it != nodes[node_i].input_buffer.end(); it++)
                     {
-                        ImGui::Text("Payloads:");
-                        for (int kind_i = 1; kind_i < (int)Payload::Kind::COUNT; kind_i++)
+                        if (it->first != Payload::Kind::NONE && it->first != Payload::Kind::COUNT && it->second > 0)
                         {
-                            if (nodes[node_i].payload_counts[kind_i] > 0)
-                            {
-                                ImGui::BulletText("%d x %s", nodes[node_i].payload_counts[kind_i], Payload::get_kind_string((Payload::Kind)kind_i));
-                            }
+                            ImGui::BulletText("%d x %s", it->second, Payload::get_kind_string(it->first));
+                        }
+                    }
+
+                    ImGui::Text("Output buffer:");
+                    for (auto it = nodes[node_i].output_buffer.begin(); it != nodes[node_i].output_buffer.end(); it++)
+                    {
+                        if (it->first != Payload::Kind::NONE && it->first != Payload::Kind::COUNT && it->second > 0)
+                        {
+                            ImGui::BulletText("%d x %s", it->second, Payload::get_kind_string(it->first));
                         }
                     }
 
