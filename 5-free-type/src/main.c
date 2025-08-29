@@ -1,156 +1,166 @@
-/* example1.c                                                      */
-/*                                                                 */
-/* This small program shows how to print a rotated string with the */
-/* FreeType 2 library.                                             */
-
-
-#include <stdio.h>
-#include <string.h>
+#include <assert.h>
 #include <math.h>
+#include <stdio.h>
+#include <stdlib.h>
 
-#include <ft2build.h>
-#include FT_FREETYPE_H
+#include <freetype/freetype.h>
 
+#define globvar static
 
-#define WIDTH   640
-#define HEIGHT  480
+// PPM
 
-
-/* origin is the upper left corner */
-unsigned char image[HEIGHT][WIDTH];
-
-
-/* Replace this function with something useful. */
-
-void
-draw_bitmap( FT_Bitmap*  bitmap,
-             FT_Int      x,
-             FT_Int      y)
+typedef struct Pixel
 {
-  FT_Int  i, j, p, q;
-  FT_Int  x_max = x + bitmap->width;
-  FT_Int  y_max = y + bitmap->rows;
+    unsigned char d[3];
+} Pixel;
 
+Pixel pixel_blend(Pixel dst, Pixel src, unsigned char src_coverage)
+{
+    float alpha = (float)src_coverage / 255.0f;
+    float src_r, src_g, src_b;
+    src_r = src.d[0] / 255.0f;
+    src_g = src.d[1] / 255.0f;
+    src_b = src.d[2] / 255.0f;
+    float dst_r, dst_g, dst_b;
+    dst_r = dst.d[0] / 255.0f;
+    dst_g = dst.d[1] / 255.0f;
+    dst_b = dst.d[2] / 255.0f;
 
-  /* for simplicity, we assume that `bitmap->pixel_mode' */
-  /* is `FT_PIXEL_MODE_GRAY' (i.e., not a bitmap font)   */
+    dst_r = src_r * alpha + dst_r * (1 - alpha);
+    dst_g = src_g * alpha + dst_g * (1 - alpha);
+    dst_b = src_b * alpha + dst_b * (1 - alpha);
+    return (Pixel){{
+        (unsigned char)(dst_r * 255.0f),
+        (unsigned char)(dst_g * 255.0f),
+        (unsigned char)(dst_b * 255.0f),
+    }};
+}
 
-  for ( i = x, p = 0; i < x_max; i++, p++ )
-  {
-    for ( j = y, q = 0; j < y_max; j++, q++ )
+globvar Pixel *ppm_pixels;
+globvar int ppm_width;
+globvar int ppm_height;
+
+void ppm_init(int width, int height)
+{
+    ppm_pixels = malloc(width * height * sizeof(ppm_pixels[0]));
+    assert(ppm_pixels);
+
+    for (int i = 0; i < width * height; i++)
     {
-      if ( i < 0      || j < 0       ||
-           i >= WIDTH || j >= HEIGHT )
-        continue;
-
-      image[j][i] |= bitmap->buffer[q * bitmap->width + p];
+        ppm_pixels[i] = (Pixel){255, 255, 255};
     }
-  }
+
+    ppm_width = width;
+    ppm_height = height;
 }
 
-
-void
-show_image( void )
+void ppm_draw_px(int x, int y, Pixel p)
 {
-  int  i, j;
-
-
-  for ( i = 0; i < HEIGHT; i++ )
-  {
-    for ( j = 0; j < WIDTH; j++ )
-      putchar( image[i][j] == 0 ? ' '
-                                : image[i][j] < 128 ? '+'
-                                                    : '*' );
-    putchar( '\n' );
-  }
+    ppm_pixels[ppm_width * y + x] = p;
 }
 
-
-int
-main( int     argc,
-      char**  argv )
+Pixel ppm_get_px(int x, int y)
 {
-  FT_Library    library;
-  FT_Face       face;
-
-  FT_GlyphSlot  slot;
-  FT_Matrix     matrix;                 /* transformation matrix */
-  FT_Vector     pen;                    /* untransformed origin  */
-  FT_Error      error;
-
-  char*         filename;
-  char*         text;
-
-  double        angle;
-  int           target_height;
-  int           n, num_chars;
-
-
-  if ( argc != 3 )
-  {
-    fprintf ( stderr, "usage: %s font sample-text\n", argv[0] );
-    exit( 1 );
-  }
-
-  filename      = argv[1];                           /* first argument     */
-  text          = argv[2];                           /* second argument    */
-  num_chars     = strlen( text );
-  angle         = ( 25.0 / 360 ) * 3.14159 * 2;      /* use 25 degrees     */
-  target_height = HEIGHT;
-
-  error = FT_Init_FreeType( &library );              /* initialize library */
-  /* error handling omitted */
-
-  error = FT_New_Face( library, filename, 0, &face );/* create face object */
-  /* error handling omitted */
-
-  /* use 50pt at 100dpi */
-  error = FT_Set_Char_Size( face, 50 * 64, 0,
-                            100, 0 );                /* set character size */
-  /* error handling omitted */
-
-  /* cmap selection omitted;                                        */
-  /* for simplicity we assume that the font contains a Unicode cmap */
-
-  slot = face->glyph;
-
-  /* set up matrix */
-  matrix.xx = (FT_Fixed)( cos( angle ) * 0x10000L );
-  matrix.xy = (FT_Fixed)(-sin( angle ) * 0x10000L );
-  matrix.yx = (FT_Fixed)( sin( angle ) * 0x10000L );
-  matrix.yy = (FT_Fixed)( cos( angle ) * 0x10000L );
-
-  /* the pen position in 26.6 cartesian space coordinates; */
-  /* start at (300,200) relative to the upper left corner  */
-  pen.x = 300 * 64;
-  pen.y = ( target_height - 200 ) * 64;
-
-  for ( n = 0; n < num_chars; n++ )
-  {
-    /* set transformation */
-    FT_Set_Transform( face, &matrix, &pen );
-
-    /* load glyph image into the slot (erase previous one) */
-    error = FT_Load_Char( face, text[n], FT_LOAD_RENDER );
-    if ( error )
-      continue;                 /* ignore errors */
-
-    /* now, draw to our target surface (convert position) */
-    draw_bitmap( &slot->bitmap,
-                 slot->bitmap_left,
-                 target_height - slot->bitmap_top );
-
-    /* increment pen position */
-    pen.x += slot->advance.x;
-    pen.y += slot->advance.y;
-  }
-
-  show_image();
-
-  FT_Done_Face    ( face );
-  FT_Done_FreeType( library );
-
-  return 0;
+    return ppm_pixels[ppm_width * y + x];
 }
 
-/* EOF */
+void ppm_write(const char *path)
+{
+    FILE *f = fopen(path, "wb");
+    assert(f);
+    // Write PPM header
+    fprintf(f, "P6\n%d %d\n255\n", ppm_width, ppm_height);
+    fwrite(ppm_pixels, ppm_width * ppm_height * sizeof(ppm_pixels[0]), 1, f);
+    fclose(f);
+}
+
+// Free type
+globvar FT_Library ft_library;
+globvar FT_Face ft_face;
+
+void ppm_draw_ft_bitmap(FT_Bitmap *bitmap, int x_min, int y_min)
+{
+    int x_max = x_min + bitmap->width;
+    int y_max = y_min + bitmap->rows;
+
+    Pixel black = {0};
+    for (int x = x_min, p = 0; x < x_max; x++, p++)
+    {
+        for (int y = y_min, q = 0; y < y_max; y++, q++)
+        {
+            if (x < 0 || y < 0 || x >= ppm_width || y >= ppm_height)
+            {
+                continue;
+            }
+
+            unsigned char coverage = bitmap->buffer[q * bitmap->width + p];
+            Pixel p = pixel_blend(ppm_get_px(x, y), black, coverage);
+            ppm_draw_px(x, y, p);
+        }
+    }
+}
+
+int main()
+{
+    const int width = 640;
+    const int height = 480;
+    ppm_init(width, height);
+
+    #if 1
+    FT_Error error;
+    error = FT_Init_FreeType(&ft_library);
+    assert(!error);
+
+    error = FT_New_Face(ft_library, "res/DMMono-Regular.ttf", 0, &ft_face);
+    assert(!error);
+
+    /* use 50pt at 100dpi */
+    error = FT_Set_Char_Size(ft_face, 50 * 64, 0, 100, 0);
+    assert(!error);
+
+    double angle = ( 25.0 / 360 ) * 3.14159 * 2; // use 25 degrees
+    FT_GlyphSlot slot = ft_face->glyph;
+
+    FT_Matrix matrix;
+    matrix.xx = (FT_Fixed)( cos( angle ) * 0x10000L );
+    matrix.xy = (FT_Fixed)(-sin( angle ) * 0x10000L );
+    matrix.yx = (FT_Fixed)( sin( angle ) * 0x10000L );
+    matrix.yy = (FT_Fixed)( cos( angle ) * 0x10000L );
+
+    int target_height = height;
+    FT_Vector pen;
+    /* the pen position in 26.6 cartesian space coordinates; */
+    /* start at (300,200) relative to the upper left corner  */
+    pen.x = 300 * 64;
+    pen.y = ( target_height - 200 ) * 64;
+
+    const char *text = "Andrey :)";
+    int char_count = strlen(text);
+
+    for (int i = 0; i < char_count; i++)
+    {
+        /* set transformation */
+        FT_Set_Transform(ft_face, &matrix, &pen);
+
+        /* load glyph image into the slot (erase previous one) */
+        error = FT_Load_Char(ft_face, text[i], FT_LOAD_RENDER);
+        assert(!error);
+
+        ppm_draw_ft_bitmap(
+            &slot->bitmap,
+            slot->bitmap_left,
+            target_height - slot->bitmap_top);
+
+        /* increment pen position */
+        pen.x += slot->advance.x;
+        pen.y += slot->advance.y;
+    }
+    #endif
+
+    ppm_write("out/out.ppm");
+
+    FT_Done_Face    (ft_face);
+    FT_Done_FreeType(ft_library);
+
+    return 0;
+}
