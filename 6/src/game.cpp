@@ -13,9 +13,9 @@
 #include "gl_tiles.cpp"
 #include "util.hpp"
 
-// Ontological ring
 struct Payload
 {
+    // Ontological ring
     enum class Kind : int
     {
         NONE,
@@ -46,6 +46,16 @@ struct Payload
     Payload(Kind kind)
     {
         this->kind = kind;
+    }
+
+    static inline Payload NONE()
+    {
+        return Payload{Kind::NONE};
+    }
+
+    inline bool is_none()
+    {
+        return kind == Kind::NONE;
     }
 
     static const char *get_kind_string(Kind kind)
@@ -83,8 +93,17 @@ struct Payload
 
     static Kind get_random_kind()
     {
-        Kind kind = (Kind)(rand() % (int)Kind::COUNT);
-        return kind;
+        int random_index = (rand() % ((int)Kind::COUNT - 1)) + 1;
+        return (Kind)random_index;
+    }
+
+    void transmute()
+    {
+        kind = (Payload::Kind)((int)kind + 1);
+        if (kind >= Payload::Kind::COUNT)
+        {
+            kind = (Payload::Kind)1;
+        }
     }
 };
 
@@ -104,10 +123,10 @@ struct Node
 
     bool is_window_open = false;
 
-    std::map<Payload::Kind, int> input_buffer;
-    std::map<Payload::Kind, int> output_buffer;
+    std::vector<Payload> input_buffer;
+    std::vector<float> progress;
+    std::vector<Payload> output_buffer;
 
-    float progress = 0.0f;
     float rate = 0.6f;
 
     Node(const char *name, Kind kind)
@@ -116,12 +135,11 @@ struct Node
         strcpy(this->name_buf, name);
     }
 
-    Node(const char *name, Kind kind, int total_payload_count) : Node(name, kind)
+    Node(const char *name, Kind kind, int random_payload_count) : Node(name, kind)
     {
-        while (get_output_payload_count() < total_payload_count)
+        while ((int)output_buffer.size() < random_payload_count)
         {
-            Payload::Kind random_kind = (Payload::Kind)(rand() % (int)Payload::Kind::COUNT);
-            add_payload_to_output_buffer(random_kind, 1);
+            add_payload_to_output_buffer(Payload::get_random_kind());
         }
     }
 
@@ -156,82 +174,76 @@ struct Node
         return names[i];
     }
 
-    void add_payload_to_output_buffer(Payload::Kind kind, int count)
+    void add_payload_to_output_buffer(Payload payload)
     {
-        output_buffer[kind] += count;
+        output_buffer.push_back(payload);
     }
 
-    void remove_payload_from_output_buffer(Payload::Kind kind, int count)
+    void add_payload_to_input_buffer(Payload payload)
     {
-        if (output_buffer[kind] > 0)
-        {
-            output_buffer[kind] -= count;
-        }
+        input_buffer.push_back(payload);
+        progress.push_back(0.0f);
     }
 
-    void add_payload_to_input_buffer(Payload::Kind kind, int count)
+    void move_payload_from_input_to_output(int index)
     {
-        input_buffer[kind] += count;
     }
 
-    void remove_payload_from_input_buffer(Payload::Kind kind, int count)
+    Payload retrieve_random_output_payload()
     {
-        if (input_buffer[kind] > 0)
+        if (output_buffer.size() > 0)
         {
-            input_buffer[kind] -= count;
+            int rand_index = rand() % output_buffer.size();
+            Payload returned = output_buffer[rand_index];
+            output_buffer.erase(output_buffer.begin() + rand_index);
+            return returned;
         }
-    }
-
-    inline int get_output_payload_count()
-    {
-        int total_count = 0;
-        for (auto it = output_buffer.begin(); it != output_buffer.end(); it++)
+        else
         {
-            if (it->first != Payload::Kind::NONE && it->first != Payload::Kind::COUNT)
-            {
-                total_count += it->second;
-            }
+            return Payload::NONE();
         }
-        return total_count;
-    }
-
-    Payload::Kind retrieve_random_output_payload()
-    {
-        Payload::Kind kind = Payload::Kind::NONE;
-
-        std::vector<Payload::Kind> available_kinds;
-        for (auto it = output_buffer.begin(); it != output_buffer.end(); it++)
-        {
-            if (it->second > 0) available_kinds.push_back(it->first);
-        }
-
-        if (available_kinds.size() > 0)
-        {
-            kind = available_kinds[rand() % available_kinds.size()];
-            remove_payload_from_output_buffer(kind, 1);
-        }
-
-        return kind;
     }
 
     void update_progress(float delta)
     {
-        if (kind == Kind::Transmuter)
+        switch (kind)
         {
-            progress += delta * rate;
-        }
-
-        if (progress > 1.0f)
-        {
-            for (auto it = input_buffer.begin(); it != input_buffer.end(); it++)
+            case Kind::Storage:
             {
-                int count = it->second;
-                remove_payload_from_input_buffer(it->first, count);
-                Payload::Kind new_kind = (Payload::Kind)((int)it->first + 1);
-                if (new_kind >= Payload::Kind::COUNT) new_kind = (Payload::Kind)1;
-                add_payload_to_output_buffer(new_kind, count);
-            }
-            progress = 0.0f;
+                if (input_buffer.size() > 0)
+                {
+                    for (size_t i = 0; i < input_buffer.size(); i++)
+                    {
+                        output_buffer.push_back(input_buffer[i]);
+                    }
+                    input_buffer.clear();
+                    progress.clear();
+                }
+            } break;
+
+            case Kind::Transmuter:
+            {
+                for (size_t i = 0; i < input_buffer.size();)
+                {
+                    progress[i] += delta * rate;
+                    if (progress[i] > 1.0f)
+                    {
+                        Payload payload = input_buffer[i];
+                        input_buffer.erase(input_buffer.begin() + i);
+                        progress.erase(progress.begin() + i);
+                        payload.transmute();
+                        output_buffer.push_back(payload);
+                    }
+                    else
+                    {
+                        i++;
+                    }
+                }
+            } break;
+
+            case Kind::NONE:
+            case Kind::COUNT:
+                break;
         }
     }
 };
@@ -260,27 +272,17 @@ struct Agent
     void start_delivery(std::vector<Node> &nodes)
     {
         size_t which_node = travelling_from_b ? node_b : node_a;
-
-        // trace("Starting delivery from %s to %s.", travelling_from_b ? "B" : "A", travelling_from_b ? "A" : "B");
-
-        if (nodes[which_node].get_output_payload_count() > 0)
-        {
-            carried_payload = {nodes[which_node].retrieve_random_output_payload()};
-        }
-        else
-        {
-            carried_payload = {Payload::Kind::NONE};
-        }
+        carried_payload = nodes[which_node].retrieve_random_output_payload();
     }
 
     void finish_delivery(std::vector<Node> &nodes)
     {
-        if (carried_payload.kind != Payload::Kind::NONE)
+        if (!carried_payload.is_none())
         {
             size_t node_index;
             if (!travelling_from_b) node_index = node_b;
             else node_index = node_a;
-            nodes[node_index].add_payload_to_input_buffer(carried_payload.kind, 1);
+            nodes[node_index].add_payload_to_input_buffer(carried_payload.kind);
         }
         travelling_from_b = !travelling_from_b;
         progress = 0.0f;
@@ -491,39 +493,50 @@ struct Game
 
     void draw_node_windows()
     {
-        for (size_t node_i = 1; node_i < nodes.size(); node_i++)
+        size_t node_i = 0;
+        for (auto node_it = nodes.begin(); node_it != nodes.end(); node_it++, node_i++)
         {
-            if (nodes[node_i].is_window_open)
+            if (node_it->is_window_open)
             {
                 ImGui::SetNextWindowSize(ImVec2(200, 200), ImGuiCond_FirstUseEver);
 
                 char window_name_buf[STR_BUF_SMALL];
-                snprintf(window_name_buf, sizeof(window_name_buf), "Node: %s###Node%zu", nodes[node_i].name_buf, node_i);
+                snprintf(window_name_buf, sizeof(window_name_buf), "Node: %s###Node%zu", node_it->name_buf, node_i);
 
-                if (ImGui::Begin(window_name_buf, &nodes[node_i].is_window_open))
+                if (ImGui::Begin(window_name_buf, &node_it->is_window_open))
                 {
-                    ImGui::InputText("Name", nodes[node_i].name_buf, sizeof(nodes[node_i].name_buf));
+                    ImGui::InputText("Name", node_it->name_buf, sizeof(node_it->name_buf));
 
-                    ImGui::BulletText("Kind: %s", nodes[node_i].get_kind_str());
-
-                    ImGui::BulletText("Progress: %.3f", nodes[node_i].progress);
+                    // ImGui::BulletText("Kind: %s", node_it->get_kind_str());
+                    if (ImGui::BeginCombo("Kind", node_it->get_kind_str(), 0))
+                    {
+                        for (int i = 1; i < (int)Node::Kind::COUNT; i++)
+                        {
+                            const bool is_selected = (Node::Kind)i == node_it->kind;
+                            if (ImGui::Selectable(Node::get_kind_str((Node::Kind)i), is_selected))
+                            {
+                                node_it->kind = (Node::Kind)i;
+                            }
+                            if (is_selected)
+                            {
+                                ImGui::SetItemDefaultFocus();
+                            }
+                        }
+                        ImGui::EndCombo();
+                    }
 
                     ImGui::Text("Input buffer:");
-                    for (auto it = nodes[node_i].input_buffer.begin(); it != nodes[node_i].input_buffer.end(); it++)
+                    for (size_t input_i = 0; input_i < node_it->input_buffer.size(); input_i++)
                     {
-                        if (it->first != Payload::Kind::NONE && it->first != Payload::Kind::COUNT && it->second > 0)
-                        {
-                            ImGui::BulletText("%d x %s", it->second, Payload::get_kind_string(it->first));
-                        }
+                        ImGui::BulletText("%s. Progress: %.2f",
+                            node_it->input_buffer[input_i].get_kind_string(),
+                            node_it->progress[input_i] * 100.0f);
                     }
 
                     ImGui::Text("Output buffer:");
-                    for (auto it = nodes[node_i].output_buffer.begin(); it != nodes[node_i].output_buffer.end(); it++)
+                    for (auto input_it = node_it->output_buffer.begin(); input_it != node_it->output_buffer.end(); input_it++)
                     {
-                        if (it->first != Payload::Kind::NONE && it->first != Payload::Kind::COUNT && it->second > 0)
-                        {
-                            ImGui::BulletText("%d x %s", it->second, Payload::get_kind_string(it->first));
-                        }
+                        ImGui::BulletText("%s", input_it->get_kind_string());
                     }
 
                     ImGui::End();
