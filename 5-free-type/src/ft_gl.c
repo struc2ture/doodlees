@@ -45,6 +45,10 @@ unsigned char *atlas_pixels;
 int atlas_width;
 int atlas_height;
 
+globvar float font_ascender;
+
+globvar float dpi_scale;
+
 void draw_ft_bitmap(FT_Bitmap *bitmap, int x_min, int y_min)
 {
     int x_max = x_min + bitmap->width;
@@ -63,6 +67,36 @@ void draw_ft_bitmap(FT_Bitmap *bitmap, int x_min, int y_min)
     }
 }
 
+void render_glyph(unsigned char ch, float *pen_x, float *pen_y, bool new_line)
+{
+    GlyphMetric *gm = glyph_metrics + ch;
+
+    float x = *pen_x;
+    float y = *pen_y + font_ascender / dpi_scale;
+
+    float screen_min_x = x + gm->offset_x / dpi_scale;
+    float screen_min_y = y - gm->offset_y / dpi_scale;
+    float screen_max_x = screen_min_x + gm->width / dpi_scale;
+    float screen_max_y = screen_min_y + gm->height / dpi_scale;
+
+    renderer_draw(
+        V2(screen_min_x, screen_max_y),
+        V2(screen_max_x, screen_max_y),
+        V2(screen_max_x, screen_min_y),
+        V2(screen_min_x, screen_min_y),
+        // TexCoords in reverse order to flip the quad
+        V2(gm->u0, gm->v1),
+        V2(gm->u1, gm->v1),
+        V2(gm->u1, gm->v0),
+        V2(gm->u0, gm->v0),
+        V4(1.0f, 1.0f, 1.0f, 1.0f)
+    );
+
+    *pen_x += gm->advance_x / dpi_scale;
+
+    if (new_line) *pen_y += font_ascender / dpi_scale;
+}
+
 // MAIN
 
 globvar GLFWwindow *window;
@@ -73,13 +107,15 @@ void init()
     atlas_height = 512;
     atlas_pixels = xcalloc(atlas_width * atlas_height);
 
+    dpi_scale = 2.0f;
+
     renderer_init();
 
     FT_Error error;
     error = FT_Init_FreeType(&ft_library);
     assert(!error);
 
-    error = FT_New_Face(ft_library, "res/DMMono-Regular.ttf", 0, &ft_face);
+    error = FT_New_Face(ft_library, "res/DMMono-Italic.ttf", 0, &ft_face);
     assert(!error);
 
     int scalable = FT_IS_SCALABLE(ft_face);
@@ -88,6 +124,8 @@ void init()
     float dpi_scale = 2.0f;
     error = FT_Set_Char_Size(ft_face, 32.0f * 64.0f, 0, 72.0f * dpi_scale, 0);
     assert(!error);
+
+    font_ascender = ft_face->size->metrics.ascender / 64.0f;
 
     int target_height = atlas_height;
 
@@ -158,35 +196,25 @@ void frame()
     const int starting_ch = 32;
     const int last_ch = 127;
 
-    float dpi_scale = 2.0f;
-
     float pen_x = 5.0f;
     float pen_y = 5.0f;
 
-    for (int ch = starting_ch; ch < last_ch; ch++)
-    // const int ch = 0x4a;
+    const char *text = "LIA, I love you :)";
+    int len = strlen(text);
+    for (int i = 0; i < len; i++)
     {
-        GlyphMetric *gm = glyph_metrics + ch;
+        bool new_line = (i == len - 1);
+        render_glyph(text[i], &pen_x, &pen_y, new_line);
+    }
 
-        float screen_min_x = pen_x;
-        float screen_min_y = pen_y;
-        float screen_max_x = screen_min_x + gm->width / dpi_scale;
-        float screen_max_y = screen_min_y + gm->height / dpi_scale;
+    pen_x = 5.0f;
 
-        renderer_draw(
-            V2(screen_min_x, screen_max_y),
-            V2(screen_max_x, screen_max_y),
-            V2(screen_max_x, screen_min_y),
-            V2(screen_min_x, screen_min_y),
-            // TexCoords in reverse order to flip the quad
-            V2(gm->u0, gm->v1),
-            V2(gm->u1, gm->v1),
-            V2(gm->u1, gm->v0),
-            V2(gm->u0, gm->v0),
-            V4(1.0f, 1.0f, 1.0f, 1.0f)
-        );
-
-        pen_x += gm->advance_x / dpi_scale;
+    const char *text2 = "    - Andrey";
+    int len2 = strlen(text2);
+    for (int i = 0; i < len2; i++)
+    {
+        bool new_line = (i == len - 1);
+        render_glyph(text2[i], &pen_x, &pen_y, new_line);
     }
 
     int width;
