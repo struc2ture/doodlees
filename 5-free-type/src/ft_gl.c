@@ -102,8 +102,7 @@ void init()
     int starting_ch = 32;
     int last_ch = 127;
 
-    int total_count = last_ch - starting_ch;
-    glyph_metrics = calloc(1, total_count * sizeof(glyph_metrics[0]));
+    glyph_metrics = calloc(1, last_ch * sizeof(glyph_metrics[0]));
     int glyph_i = 0;
 
     float row_max_height = 0;
@@ -134,12 +133,12 @@ void init()
         g.offset_y = (float)ft_face->glyph->bitmap_top;
         g.width = (float)ft_face->glyph->bitmap.width;
         g.height = (float)ft_face->glyph->bitmap.rows;
-        g.u0 = pen_x;
-        g.v0 = pen_y;
-        g.u1 = pen_x + g.width;
-        g.v1 = pen_y + g.height;
+        g.u0 = pen_x / (float)atlas_width;
+        g.v0 = pen_y / (float)atlas_height;
+        g.u1 = g.u0 + g.width / (float)atlas_width;
+        g.v1 = g.v0 + g.height / (float)atlas_height;
 
-        glyph_metrics[glyph_i++] = g;
+        glyph_metrics[ch] = g;
 
         if (g.height + pad > row_max_height)
         {
@@ -156,13 +155,39 @@ void init()
 
 void frame()
 {
-    renderer_draw(
-        V2(0.0f, 256.0f),
-        V2(256.0f, 256.0f),
-        V2(256.0f, 0.0f),
-        V2(0.0f, 0.0f),
-        V4(1.0f, 1.0f, 1.0f, 1.0f)
-    );
+    const int starting_ch = 32;
+    const int last_ch = 127;
+
+    float dpi_scale = 2.0f;
+
+    float pen_x = 5.0f;
+    float pen_y = 5.0f;
+
+    for (int ch = starting_ch; ch < last_ch; ch++)
+    // const int ch = 0x4a;
+    {
+        GlyphMetric *gm = glyph_metrics + ch;
+
+        float screen_min_x = pen_x;
+        float screen_min_y = pen_y;
+        float screen_max_x = screen_min_x + gm->width / dpi_scale;
+        float screen_max_y = screen_min_y + gm->height / dpi_scale;
+
+        renderer_draw(
+            V2(screen_min_x, screen_max_y),
+            V2(screen_max_x, screen_max_y),
+            V2(screen_max_x, screen_min_y),
+            V2(screen_min_x, screen_min_y),
+            // TexCoords in reverse order to flip the quad
+            V2(gm->u0, gm->v1),
+            V2(gm->u1, gm->v1),
+            V2(gm->u1, gm->v0),
+            V2(gm->u0, gm->v0),
+            V4(1.0f, 1.0f, 1.0f, 1.0f)
+        );
+
+        pen_x += gm->advance_x / dpi_scale;
+    }
 
     int width;
     int height;

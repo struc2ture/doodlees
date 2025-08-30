@@ -70,7 +70,7 @@ static const char* fs_src =
     "out vec4 FragColor;\n"
     "void main()\n"
     "{\n"
-    "    float t = texture(uTex, vec2(TexCoord.x, 1.0f - TexCoord.y)).r;\n"
+    "    float t = texture(uTex, vec2(TexCoord.x, TexCoord.y)).r;\n"
     "    FragColor = vec4(Color.rgb, Color.a * t);\n"
     "}\n";
 
@@ -168,7 +168,7 @@ void renderer_init_tex_from_px(void *pixels, int width, int height)
     glBindTexture(GL_TEXTURE_2D, atlas_tex);
 }
 
-void renderer_draw(v2 a, v2 b, v2 c, v2 d, v4 color)
+void renderer_draw(v2 a, v2 b, v2 c, v2 d, v2 t_a, v2 t_b, v2 t_c, v2 t_d, v4 color)
 {
     if (quad_count >= MAX_QUADS)
     {
@@ -182,10 +182,10 @@ void renderer_draw(v2 a, v2 b, v2 c, v2 d, v4 color)
     // _get_atlas_q_verts(V2I(0, 0), atlas_q_verts);
     v2 atlas_q_verts[4] =
     {
-        V2(0.0f, 0.0f),
-        V2(1.0f, 0.0f),
-        V2(1.0f, 1.0f),
-        V2(0.0f, 1.0f)
+        t_a,
+        t_b,
+        t_c,
+        t_d
     };
 
     quad_buf[quad_count++] = (struct Quad){
