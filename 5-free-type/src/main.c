@@ -6,6 +6,7 @@
 #include <freetype/freetype.h>
 
 #define globvar static
+#define bp() __builtin_debugtrap()
 
 // PPM
 
@@ -114,52 +115,64 @@ int main()
     error = FT_New_Face(ft_library, "res/DMMono-Regular.ttf", 0, &ft_face);
     assert(!error);
 
-    /* use 50pt at 100dpi */
-    error = FT_Set_Char_Size(ft_face, 50 * 64, 0, 100, 0);
+    int scalable = FT_IS_SCALABLE(ft_face);
+    int kerning = FT_HAS_KERNING(ft_face);
+
+    float dpi_scale = 2.0f;
+    error = FT_Set_Char_Size(ft_face, 14 * 64, 0, 72 * dpi_scale, 0);
     assert(!error);
 
-    double angle = ( 25.0 / 360 ) * 3.14159 * 2; // use 25 degrees
-    FT_GlyphSlot slot = ft_face->glyph;
-
-    FT_Matrix matrix;
-    matrix.xx = (FT_Fixed)( cos( angle ) * 0x10000L );
-    matrix.xy = (FT_Fixed)(-sin( angle ) * 0x10000L );
-    matrix.yx = (FT_Fixed)( sin( angle ) * 0x10000L );
-    matrix.yy = (FT_Fixed)( cos( angle ) * 0x10000L );
-
     int target_height = height;
-    FT_Vector pen;
-    /* the pen position in 26.6 cartesian space coordinates; */
-    /* start at (300,200) relative to the upper left corner  */
-    pen.x = 300 * 64;
-    pen.y = ( target_height - 200 ) * 64;
+
+    int origin_x = 0;
+    int origin_y = 0;
+
+    int pad = 4;
+
+    int pen_x = origin_x + pad;
+    int pen_y = origin_y + pad;
 
     const char *text = "Andrey :)";
     int char_count = strlen(text);
 
-    for (int i = 0; i < char_count; i++)
-    {
-        /* set transformation */
-        FT_Set_Transform(ft_face, &matrix, &pen);
+    int starting_ch = 32;
+    int last_ch = 127;
 
-        /* load glyph image into the slot (erase previous one) */
-        error = FT_Load_Char(ft_face, text[i], FT_LOAD_RENDER);
+    int max_height = 0;
+
+
+    for (int ch = starting_ch; ch < last_ch; ch++)
+    {
+        error = FT_Load_Char(ft_face, (unsigned char)ch, FT_LOAD_RENDER);
         assert(!error);
 
         ppm_draw_ft_bitmap(
-            &slot->bitmap,
-            slot->bitmap_left,
-            target_height - slot->bitmap_top);
+            &ft_face->glyph->bitmap,
+            pen_x + pad,
+            pen_y + pad
+        );
 
-        /* increment pen position */
-        pen.x += slot->advance.x;
-        pen.y += slot->advance.y;
+        if (((int)ft_face->glyph->bitmap.rows + pad) > max_height)
+        {
+            max_height = (int)ft_face->glyph->bitmap.rows + pad;
+        }
+
+        if ((pen_x + pad + (int)ft_face->glyph->bitmap.width) > ppm_width)
+        {
+            pen_x = pad;
+            pen_y += max_height + pad;
+            max_height = 0;
+        }
+        else
+        {
+            pen_x += ft_face->glyph->bitmap.width + pad;
+        }
     }
     #endif
 
     ppm_write("out/out.ppm");
 
-    FT_Done_Face    (ft_face);
+    FT_Done_Face(ft_face);
     FT_Done_FreeType(ft_library);
 
     return 0;
