@@ -1,11 +1,13 @@
-run: bin/main
-	lldb bin/main -o run -o q
+BIN = bin/ppm_atlas
 
-debug: bin/main
-	lldb bin/main -o run
+run: $(BIN)
+	lldb $(BIN) -o run -o q
 
-bin/main:
-	clang -g src/main.c -o bin/main -I/usr/local/include/freetype2 -L/usr/local/lib/ -lfreetype
+debug: $(BIN)
+	lldb $(BIN) -o run
+
+bin/ppm_atlas:
+	clang -g src/ppm_atlas.c -o bin/ppm_atlas -I/usr/local/include/freetype2 -L/usr/local/lib/ -lfreetype
 
 bin/example:
 	clang -g src/example.c -o bin/example -I/usr/local/include/freetype2 -L/usr/local/lib/ -lfreetype

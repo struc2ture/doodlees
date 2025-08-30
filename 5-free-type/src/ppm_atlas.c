@@ -8,6 +8,16 @@
 #define globvar static
 #define bp() __builtin_debugtrap()
 
+static inline int truncate_to_int(float v)
+{
+    return (int)v;
+}
+
+static inline float convert_26dot6_float(FT_Pos x)
+{
+    return (float)(x / 64.0f);
+}
+
 // PPM
 
 typedef struct Pixel
@@ -79,6 +89,22 @@ void ppm_write(const char *path)
 globvar FT_Library ft_library;
 globvar FT_Face ft_face;
 
+typedef struct GlyphMetric
+{
+    float advance_x;
+    float offset_x;
+    float offset_y;
+    float width;
+    float height;
+
+    float u0;
+    float v0;
+    float u1;
+    float v1;
+} GlyphMetric;
+
+GlyphMetric *glyph_metrics;
+
 void ppm_draw_ft_bitmap(FT_Bitmap *bitmap, int x_min, int y_min)
 {
     int x_max = x_min + bitmap->width;
@@ -124,22 +150,22 @@ int main()
 
     int target_height = height;
 
-    int origin_x = 0;
-    int origin_y = 0;
+    float origin_x = 0.0f;
+    float origin_y = 0.0f;
 
-    int pad = 4;
+    float pad = 4.0f;
 
-    int pen_x = origin_x + pad;
-    int pen_y = origin_y + pad;
-
-    const char *text = "Andrey :)";
-    int char_count = strlen(text);
+    float pen_x = origin_x + pad;
+    float pen_y = origin_y + pad;
 
     int starting_ch = 32;
     int last_ch = 127;
 
-    int max_height = 0;
+    int total_count = last_ch - starting_ch;
+    glyph_metrics = calloc(1, total_count * sizeof(glyph_metrics[0]));
+    int glyph_i = 0;
 
+    float row_max_height = 0;
 
     for (int ch = starting_ch; ch < last_ch; ch++)
     {
@@ -148,29 +174,44 @@ int main()
 
         ppm_draw_ft_bitmap(
             &ft_face->glyph->bitmap,
-            pen_x + pad,
-            pen_y + pad
+            truncate_to_int(pen_x + pad),
+            truncate_to_int(pen_y + pad)
         );
 
-        if (((int)ft_face->glyph->bitmap.rows + pad) > max_height)
+        GlyphMetric g = {};
+        g.advance_x = convert_26dot6_float(ft_face->glyph->advance.x);
+        g.offset_x = (float)ft_face->glyph->bitmap_left;
+        g.offset_y = (float)ft_face->glyph->bitmap_top;
+        g.width = (float)ft_face->glyph->bitmap.width;
+        g.height = (float)ft_face->glyph->bitmap.rows;
+        g.u0 = pen_x + pad;
+        g.v0 = pen_y + pad;
+        g.u1 = pen_x + pad + ft_face->glyph->bitmap.width;
+        g.v1 = pen_y + pad + ft_face->glyph->bitmap.rows;
+
+        glyph_metrics[glyph_i++] = g;
+
+        if (ft_face->glyph->bitmap.rows + pad > row_max_height)
         {
-            max_height = (int)ft_face->glyph->bitmap.rows + pad;
+            row_max_height = g.height + pad;
         }
 
-        if ((pen_x + pad + (int)ft_face->glyph->bitmap.width) > ppm_width)
+        if (pen_x + pad + g.height > ppm_width)
         {
             pen_x = pad;
-            pen_y += max_height + pad;
-            max_height = 0;
+            pen_y += row_max_height + pad;
+            row_max_height = 0;
         }
         else
         {
-            pen_x += ft_face->glyph->bitmap.width + pad;
+            pen_x += g.height + pad;
         }
     }
     #endif
 
     ppm_write("out/out.ppm");
+
+    bp();
 
     FT_Done_Face(ft_face);
     FT_Done_FreeType(ft_library);
