@@ -4,10 +4,12 @@
 #include <OpenGL/gl3.h>
 #include <GLFW/glfw3.h>
 
-#define trace(FMT, ...) \
-    printf("[TRACE:%s:%d(%s)] " FMT "\n", __FILE__, __LINE__, __func__, ##__VA_ARGS__)
+#include "common/types.h"
+#include "common/util.h"
 
-#define globvar static
+#include "ppm_write.h"
+
+#include "ft_gl_renderer.c"
 
 static inline int truncate_to_int(float v)
 {
@@ -19,26 +21,154 @@ static inline float convert_26dot6_float(FT_Pos x)
     return (float)(x / 64.0f);
 }
 
+// Free type
+globvar FT_Library ft_library;
+globvar FT_Face ft_face;
+
+typedef struct GlyphMetric
+{
+    float advance_x;
+    float offset_x;
+    float offset_y;
+    float width;
+    float height;
+
+    float u0;
+    float v0;
+    float u1;
+    float v1;
+} GlyphMetric;
+
+GlyphMetric *glyph_metrics;
+
+unsigned char *atlas_pixels;
+int atlas_width;
+int atlas_height;
+
+void draw_ft_bitmap(FT_Bitmap *bitmap, int x_min, int y_min)
+{
+    int x_max = x_min + bitmap->width;
+    int y_max = y_min + bitmap->rows;
+
+    for (int x = x_min, p = 0; x < x_max; x++, p++)
+    {
+        for (int y = y_min, q = 0; y < y_max; y++, q++)
+        {
+            if (x < 0 || y < 0 || x >= atlas_width || y >= atlas_height)
+            {
+                continue;
+            }
+            atlas_pixels[x + y * atlas_width] = bitmap->buffer[q * bitmap->width + p];
+        }
+    }
+}
+
 // MAIN
 
 globvar GLFWwindow *window;
 
 void init()
 {
+    atlas_width = 512;
+    atlas_height = 512;
+    atlas_pixels = xcalloc(atlas_width * atlas_height);
 
+    renderer_init();
+
+    FT_Error error;
+    error = FT_Init_FreeType(&ft_library);
+    assert(!error);
+
+    error = FT_New_Face(ft_library, "res/DMMono-Regular.ttf", 0, &ft_face);
+    assert(!error);
+
+    int scalable = FT_IS_SCALABLE(ft_face);
+    int kerning = FT_HAS_KERNING(ft_face);
+
+    float dpi_scale = 2.0f;
+    error = FT_Set_Char_Size(ft_face, 32.0f * 64.0f, 0, 72.0f * dpi_scale, 0);
+    assert(!error);
+
+    int target_height = atlas_height;
+
+    float origin_x = 0.0f;
+    float origin_y = 0.0f;
+
+    float pad = 4.0f;
+
+    float pen_x = origin_x + pad;
+    float pen_y = origin_y + pad;
+
+    int starting_ch = 32;
+    int last_ch = 127;
+
+    int total_count = last_ch - starting_ch;
+    glyph_metrics = calloc(1, total_count * sizeof(glyph_metrics[0]));
+    int glyph_i = 0;
+
+    float row_max_height = 0;
+
+    for (int ch = starting_ch; ch < last_ch; ch++)
+    {
+        error = FT_Load_Char(ft_face, (unsigned char)ch, FT_LOAD_RENDER);
+        assert(!error);
+
+        bool will_fit = pen_x + (float)ft_face->glyph->bitmap.width + pad <= atlas_width;
+
+        if (!will_fit)
+        {
+            pen_x = pad;
+            pen_y += row_max_height + pad;
+            row_max_height = 0;
+        }
+
+        draw_ft_bitmap(
+            &ft_face->glyph->bitmap,
+            truncate_to_int(pen_x),
+            truncate_to_int(pen_y)
+        );
+
+        GlyphMetric g = {};
+        g.advance_x = convert_26dot6_float(ft_face->glyph->advance.x);
+        g.offset_x = (float)ft_face->glyph->bitmap_left;
+        g.offset_y = (float)ft_face->glyph->bitmap_top;
+        g.width = (float)ft_face->glyph->bitmap.width;
+        g.height = (float)ft_face->glyph->bitmap.rows;
+        g.u0 = pen_x;
+        g.v0 = pen_y;
+        g.u1 = pen_x + g.width;
+        g.v1 = pen_y + g.height;
+
+        glyph_metrics[glyph_i++] = g;
+
+        if (g.height + pad > row_max_height)
+        {
+            row_max_height = g.height + pad;
+        }
+
+        pen_x += g.width + pad;
+    }
+
+    ppm_write_px1("out/atlas2.ppm", atlas_pixels, atlas_width, atlas_height);
+
+    renderer_init_tex_from_px(atlas_pixels, atlas_width, atlas_height);
 }
 
 void frame()
 {
-        int fb_w, fb_h;
-        glfwGetFramebufferSize(window, &fb_w, &fb_h);
-        glViewport(0, 0, fb_w, fb_h);
+    renderer_draw(
+        V2(0.0f, 256.0f),
+        V2(256.0f, 256.0f),
+        V2(256.0f, 0.0f),
+        V2(0.0f, 0.0f),
+        V4(1.0f, 1.0f, 1.0f, 1.0f)
+    );
 
-        int w, h;
-        glfwGetWindowSize(window, &w, &h);
+    int width;
+    int height;
+    glfwGetWindowSize(window, &width, &height);
 
-        glClearColor(0.18f, 0.86f, 0.26f, 1.0f);
-        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+    renderer_render(V2(width, height));
 }
 
 int main()
@@ -71,6 +201,13 @@ int main()
     while (!glfwWindowShouldClose(window))
     {
         glfwPollEvents();
+
+        int fb_w, fb_h;
+        glfwGetFramebufferSize(window, &fb_w, &fb_h);
+        glViewport(0, 0, fb_w, fb_h);
+
+        glClearColor(0.18f, 0.26f, 0.26f, 1.0f);
+        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
         frame();
 
