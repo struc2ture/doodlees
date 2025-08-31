@@ -67,7 +67,7 @@ void draw_ft_bitmap(FT_Bitmap *bitmap, int x_min, int y_min)
     }
 }
 
-void render_glyph(unsigned char ch, float *pen_x, float *pen_y, bool new_line)
+void render_glyph(unsigned char ch, float *pen_x, float *pen_y)
 {
     GlyphMetric *gm = glyph_metrics + ch;
 
@@ -93,8 +93,24 @@ void render_glyph(unsigned char ch, float *pen_x, float *pen_y, bool new_line)
     );
 
     *pen_x += gm->advance_x / dpi_scale;
+}
 
-    if (new_line) *pen_y += font_ascender / dpi_scale;
+void render_string(const char *str, float *pen_x, float *pen_y)
+{
+    int len = strlen(str);
+    float starting_x = *pen_x;
+    for (int i = 0; i < len; i++)
+    {
+        if (str[i] != '\n')
+        {
+            render_glyph(str[i], pen_x, pen_y);
+        }
+        else
+        {
+            *pen_y += font_ascender / dpi_scale;
+            *pen_x = starting_x;
+        }
+    }
 }
 
 // MAIN
@@ -115,7 +131,7 @@ void init()
     error = FT_Init_FreeType(&ft_library);
     assert(!error);
 
-    error = FT_New_Face(ft_library, "res/DMMono-Italic.ttf", 0, &ft_face);
+    error = FT_New_Face(ft_library, "res/DMMono-Regular.ttf", 0, &ft_face);
     assert(!error);
 
     int scalable = FT_IS_SCALABLE(ft_face);
@@ -199,23 +215,8 @@ void frame()
     float pen_x = 5.0f;
     float pen_y = 5.0f;
 
-    const char *text = "LIA, I love you :)";
-    int len = strlen(text);
-    for (int i = 0; i < len; i++)
-    {
-        bool new_line = (i == len - 1);
-        render_glyph(text[i], &pen_x, &pen_y, new_line);
-    }
-
-    pen_x = 5.0f;
-
-    const char *text2 = "    - Andrey";
-    int len2 = strlen(text2);
-    for (int i = 0; i < len2; i++)
-    {
-        bool new_line = (i == len - 1);
-        render_glyph(text2[i], &pen_x, &pen_y, new_line);
-    }
+    const char *text = "LIA, I love you :)\n    - Andrey";
+    render_string(text, &pen_x, &pen_y);
 
     int width;
     int height;
