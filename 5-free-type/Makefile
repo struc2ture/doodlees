@@ -12,8 +12,8 @@ run: $(BIN)
 debug: $(BIN)
 	lldb $(BIN) -o run
 
-bin/ft_gl: bin/common.o bin/ppm_write.o
-	clang src/ft_gl.c bin/common.o bin/ppm_write.o -o bin/ft_gl $(CFLAGS) $(LFLAGS)
+bin/ft_gl: bin/common.o bin/ppm_write.o src/font_loader.c
+	clang src/ft_gl.c src/font_loader.c bin/common.o bin/ppm_write.o -o bin/ft_gl $(CFLAGS) $(LFLAGS)
 
 bin/ppm_write.o: bin/common.o src/ppm_write.c src/ppm_write.h
 	clang src/ppm_write.c -o bin/ppm_write.o -c $(CFLAGS)
