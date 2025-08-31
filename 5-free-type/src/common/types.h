@@ -28,3 +28,8 @@ static inline v3i V3I(i32 x, i32 y, i32 z) { return (v3i){{{x, y, z}}}; }
 static inline v4i V4I(i32 x, i32 y, i32 z, i32 w) { return (v4i){{{x, y, z, w}}}; }
 
 #define V2_ZERO ((v2){{{}}})
+
+// typedef struct Rect { v2 min; v2 extents; } Rect;
+// typedef struct RectMM { v2 min; v2 max; } RectMM;
+// static inline RectMM rect_min_max(Rect r) { return (RectMM){V2(r.min.x, r.min.y), V2(r.min.x + r.extents.x, r.min.y + r.extents.y)}; }
+// static inline Rect rect_extents(RectMM r) { return (Rect){V2(r.min.x, r.min.y), V2(r.max.x - r.min.x, r.max.y - r.min.y)}; }

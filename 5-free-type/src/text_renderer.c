@@ -1,10 +1,15 @@
+#include "text_renderer.h"
+
 #include <stddef.h>
 #include <stdlib.h>
+#include <string.h>
 
 #include "common/gl_glue.h"
 #include "common/lin_math.h"
 #include "common/types.h"
 #include "common/util.h"
+
+#include "font_loader.h"
 
 #define ATLAS_TEXTURE_UNIT 0
 #define ATLAS_TEXTURE_UNIT_ENUM (GL_TEXTURE0 + ATLAS_TEXTURE_UNIT)
@@ -45,6 +50,7 @@ globvar size_t quad_count = 0;
 globvar u32 ind_buf[MAX_INDICES];
 globvar size_t ind_count = 0;
 
+globvar FontAtlas font_atlas;
 globvar GLuint atlas_tex;
 
 static const char* vs_src =
@@ -112,7 +118,7 @@ static void _get_atlas_q_verts(v2i cell_p, v2 out_verts[4])
     out_verts[3].x = min_x; out_verts[3].y = max_y;
 }
 
-void renderer_init()
+void tr_init()
 {
     glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
@@ -152,7 +158,7 @@ void renderer_init()
     glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
 }
 
-void renderer_init_tex_from_px(void *pixels, int width, int height)
+void tr_init_tex_from_px(void *pixels, int width, int height)
 {
     glGenTextures(1, &atlas_tex);
     glActiveTexture(GL_TEXTURE31); // Do texture init on unit 31, to not mess up already setup textures
@@ -168,7 +174,13 @@ void renderer_init_tex_from_px(void *pixels, int width, int height)
     glBindTexture(GL_TEXTURE_2D, atlas_tex);
 }
 
-void renderer_draw(v2 a, v2 b, v2 c, v2 d, v2 t_a, v2 t_b, v2 t_c, v2 t_d, v4 color)
+void tr_init_atlas(FontAtlas atlas)
+{
+    font_atlas = atlas;
+    tr_init_tex_from_px(font_atlas.pixels, font_atlas.width, font_atlas.height);
+}
+
+void tr_draw(v2 a, v2 b, v2 c, v2 d, v2 t_a, v2 t_b, v2 t_c, v2 t_d, v4 color)
 {
     if (quad_count >= MAX_QUADS)
     {
@@ -198,7 +210,73 @@ void renderer_draw(v2 a, v2 b, v2 c, v2 d, v2 t_a, v2 t_b, v2 t_c, v2 t_d, v4 co
     _add_indices(ind_base, (u32[]){0, 1, 2, 0, 2, 3}, 6);
 }
 
-void renderer_render(v2 window_size)
+void tr_draw_glyph(unsigned char ch, f32 *pen_x, f32 *pen_y)
+{
+    f32 x = *pen_x;
+    f32 y = *pen_y + font_loader_get_ascender(&font_atlas);
+
+    GlyphQuad q = font_loader_get_glyph_quad(&font_atlas, ch, x, y);
+
+    tr_draw(
+        V2(q.screen_min.x, q.screen_max.y),
+        V2(q.screen_max.x, q.screen_max.y),
+        V2(q.screen_max.x, q.screen_min.y),
+        V2(q.screen_min.x, q.screen_min.y),
+        // TexCoords in reverse order to flip the quad
+        V2(q.tex_min.x, q.tex_max.y),
+        V2(q.tex_max.x, q.tex_max.y),
+        V2(q.tex_max.x, q.tex_min.y),
+        V2(q.tex_min.x, q.tex_min.y),
+        V4(1.0f, 1.0f, 1.0f, 1.0f)
+    );
+
+    *pen_x += font_loader_get_advance_x(&font_atlas, ch);
+}
+
+void tr_draw_string(const char *str, f32 *pen_x, f32 *pen_y)
+{
+    int len = strlen(str);
+    f32 starting_x = *pen_x;
+    for (int i = 0; i < len; i++)
+    {
+        if (str[i] != '\n')
+        {
+            tr_draw_glyph(str[i], pen_x, pen_y);
+        }
+        else
+        {
+            *pen_y += font_loader_get_ascender(&font_atlas);
+            *pen_x = starting_x;
+        }
+    }
+}
+
+v2 tr_get_string_dim(const char *str)
+{
+    int len = strlen(str);
+    f32 pen_x = 0.0f;
+    f32 pen_y = font_loader_get_ascender(&font_atlas);
+    f32 max_x = 0.0f;
+    f32 max_y = 0.0f;
+    for (int i = 0; i < len; i++)
+    {
+        if (str[i] != '\n')
+        {
+            pen_x += font_loader_get_advance_x(&font_atlas, str[i]);
+            if (pen_x > max_x) max_x = pen_x;
+            GlyphQuad q = font_loader_get_glyph_quad(&font_atlas, str[i], pen_x, pen_y);
+            if (q.screen_max.y > max_y) max_y = q.screen_max.y;
+        }
+        else
+        {
+            pen_y += font_loader_get_ascender(&font_atlas);
+            pen_x = 0.0f;
+        }
+    }
+    return V2(max_x, max_y);
+}
+
+void tr_render(v2 window_size)
 {
     glUseProgram(shader_program);
     m4 proj = m4_proj_ortho(0.0f, window_size.x, window_size.y, 0.0f, -1.0f, 1.0f);
